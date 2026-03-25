@@ -1,44 +1,72 @@
 # PaperScout
 
-PaperScout is a full-stack **research paper scraper and search app**.
+PaperScout is a research paper scraper and discovery app focused on workshop-heavy NLP/CV search.
 
-It lets you search research papers from a clean React UI and serves results through an Express-style API.  
-In the current version, search runs on a curated mock dataset (ready to be swapped with live scraping sources like arXiv, Semantic Scholar, etc.).
+It now runs on real multi-source retrieval (no mock dataset), with filters for:
+- year (minimum year is fixed to 2021)
+- citations
+- venue/conference
+- paper type (workshop/conference/all)
+- tags (suggested + custom)
 
-## Features
+---
 
-- Search papers by title, abstract, and author
-- Lightweight API with health and search endpoints
-- React + Vite frontend
-- Express backend for local development
-- Vercel-ready production setup with serverless API routes
+## What It Searches
 
-## Tech Stack
+Current integrated sources:
+- **OpenAlex API** (broad scholarly metadata + citation counts)
+- **DBLP API** (conference/workshop metadata discovery)
+- **CVF Open Access scraper** (ACCV workshop pages and paper listings)
 
-- Frontend: React, Vite, Axios
-- Backend: Node.js, Express
-- Deployment: Vercel (static frontend + serverless API)
+Primary venue focus:
+- ICLR
+- ECCV
+- ACCV
+
+Additional venue options are available (ICCV, CVPR, ACL, EMNLP, NAACL).
+
+---
 
 ## Project Structure
 
 ```text
 paperscout/
-├─ frontend/                  # React app
-├─ backend/                   # Local Express API server
+├─ frontend/                       # React + Vite UI
 │  └─ src/
-│     ├─ data/mockPapers.js   # Mock paper dataset
-│     ├─ services/paperSearch.js
+│     ├─ components/
+│     │  ├─ SearchBar.jsx          # Query + filters + tags
+│     │  ├─ PaperList.jsx
+│     │  └─ PaperCard.jsx          # open source page / open pdf / open in app
+│     └─ api/papers.js             # API client
+│
+├─ backend/
+│  └─ src/
+│     ├─ adapters/
+│     │  ├─ openAlexAdapter.js
+│     │  ├─ dblpAdapter.js
+│     │  └─ cvfWorkshopAdapter.js
+│     ├─ services/
+│     │  ├─ paperSearch.js         # Orchestrator: aggregate + dedupe + filter + rank
+│     │  ├─ filterParser.js
+│     │  ├─ citationEnricher.js
+│     │  └─ tagger.js
+│     ├─ config/searchConfig.js
+│     ├─ utils/
+│     │  ├─ text.js
+│     │  └─ cache.js
 │     └─ routes/papers.js
-├─ api/                       # Vercel serverless functions
-│  └─ papers/
-│     ├─ health.js
-│     └─ search.js
-└─ vercel.json                # Vercel build/output config
+│
+├─ api/papers/                     # Vercel serverless API
+│  ├─ health.js
+│  └─ search.js
+└─ vercel.json
 ```
 
-## Run Locally
+---
 
-### 1. Start backend API
+## Local Development
+
+### 1. Start backend
 
 ```bash
 cd backend
@@ -46,11 +74,11 @@ npm install
 npm run dev
 ```
 
-Backend runs on `http://localhost:5000`.
+Backend: `http://localhost:5000`
 
 ### 2. Start frontend
 
-Open a second terminal:
+Open another terminal:
 
 ```bash
 cd frontend
@@ -58,70 +86,110 @@ npm install
 npm run dev
 ```
 
-Frontend runs on `http://localhost:5173`.
+Frontend: `http://localhost:5173`
 
-The Vite dev server proxies `/api/*` to `http://localhost:5000` via `frontend/vite.config.js`.
+Vite proxies `/api/*` to `http://localhost:5000`.
 
-## API Endpoints
+---
 
-Base path: `/api/papers`
+## API
 
 ### `GET /api/papers/health`
 
-Health check endpoint.
-
-Example response:
+Response:
 
 ```json
 { "status": "ok" }
 ```
 
-### `GET /api/papers/search?q=<query>`
+### `GET /api/papers/search`
 
-Search papers by keyword.
+Required:
+- `q`: query string
 
-- Required query param: `q`
-- Returns HTTP `400` if `q` is missing or empty
+Optional:
+- `minYear` (default `2021`, cannot go below 2021)
+- `maxYear` (default current year)
+- `minCitations` (default `0`)
+- `maxCitations`
+- `type`: `workshop | conference | all` (default `workshop`)
+- `venues`: comma-separated list (`ICLR,ECCV,ACCV`)
+- `tags`: comma-separated tags
+- `limit` (default `40`, max `100`)
 
 Example:
 
 ```bash
-curl "http://localhost:5000/api/papers/search?q=transformer"
+curl "http://localhost:5000/api/papers/search?q=vision%20language%20model&minYear=2021&minCitations=10&type=workshop&venues=ICLR,ECCV,ACCV&tags=cv,multimodal"
 ```
 
-## Deploy to Vercel
+---
 
-### Option A: Vercel Dashboard
+## Deploy on Vercel
+
+### Dashboard
 
 1. Push repo to GitHub/GitLab/Bitbucket.
-2. In Vercel, click **Add New Project** and import this repository.
-3. Keep the root directory as the repository root.
+2. Import project in Vercel.
+3. Keep root directory as repo root.
 4. Deploy.
 
 `vercel.json` already configures:
-- Install: `npm install --prefix frontend`
-- Build: `npm run build --prefix frontend`
-- Output: `frontend/dist`
+- install command for both `frontend` and `backend`
+- frontend build command
+- frontend static output directory
 
-Production API routes are:
-- `/api/papers/health`
-- `/api/papers/search?q=transformer`
-
-### Option B: Vercel CLI
+### CLI
 
 ```bash
 npm i -g vercel
 cd /path/to/paperscout
 vercel
-```
-
-Deploy to production:
-
-```bash
 vercel --prod
 ```
 
-## Notes
+---
 
-- Current search is in **mock data mode** (`backend/src/data/mockPapers.js`).
-- To make this a true live scraper, replace the mock search service with source-specific scraping/fetch logic and keep the same endpoint contracts.
+## Backend Implementation Guide (What You Need To Do Next)
+
+The current backend is a strong MVP. To make it production-grade:
+
+1. Add more source adapters
+- `backend/src/adapters/openReviewAdapter.js` for ICLR workshop coverage from OpenReview endpoints.
+- `backend/src/adapters/ecvaAdapter.js` for ECCV workshop pages.
+- Optional: ACL Anthology workshop adapter for NLP-heavy retrieval.
+
+2. Add persistence layer
+- Introduce Postgres tables for `papers`, `venues`, `tags`, `search_cache`.
+- Store normalized paper records with a canonical ID (DOI > arXiv > title hash).
+
+3. Move scraping off request path
+- Add a queue worker (BullMQ/Redis or a cron worker).
+- API request should read mostly from cache/database and trigger async refresh.
+
+4. Add robust rate-limit handling
+- Exponential backoff and retry budget per source.
+- Circuit-breaker behavior per adapter.
+
+5. Improve ranking
+- Blend text relevance + citations + recency + workshop boost + venue focus.
+- Add learned re-ranking later (optional).
+
+6. Add observability
+- Structured logs per adapter (`latency`, `hit_count`, `errors`).
+- Metrics dashboard for source health and result quality.
+
+7. Add testing
+- Unit tests for parsers/normalizers/tagger.
+- Adapter snapshot tests for scraper HTML parsing.
+- Contract tests for `/api/papers/search`.
+
+---
+
+## Environment Variables
+
+Optional:
+- `CVF_MAX_WORKSHOP_PAGES` (default `10`) to control workshop scraping breadth.
+
+Future:
+- API keys for premium sources and higher request limits.

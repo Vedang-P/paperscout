@@ -1,6 +1,6 @@
 import PaperCard from "./PaperCard";
 
-export default function PaperList({ papers, loading, error, query }) {
+export default function PaperList({ papers, loading, error, query, meta, filters }) {
   if (loading) {
     return (
       <div className="paper-list">
@@ -30,6 +30,14 @@ export default function PaperList({ papers, loading, error, query }) {
       <p className="paper-list__count">
         {papers.length} result{papers.length !== 1 ? "s" : ""} for &ldquo;{query}&rdquo;
       </p>
+      {filters && (
+        <p className="paper-list__filters">
+          {filters.type} · years {filters.minYear}-{filters.maxYear} · min citations {filters.minCitations}
+        </p>
+      )}
+      {meta?.dataSources?.length > 0 && (
+        <p className="paper-list__sources">sources: {meta.dataSources.join(" · ")}</p>
+      )}
       {papers.map((paper) => (
         <PaperCard key={paper.id} paper={paper} />
       ))}

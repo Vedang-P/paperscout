@@ -11,19 +11,25 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [meta, setMeta] = useState(null);
+  const [activeFilters, setActiveFilters] = useState(null);
 
-  const handleSearch = async (searchQuery) => {
-    if (!searchQuery.trim()) return;
-    setQuery(searchQuery);
+  const handleSearch = async ({ query: searchQuery, filters }) => {
+    if (!searchQuery || !searchQuery.trim()) return;
+    setQuery(searchQuery.trim());
     setLoading(true);
     setError(null);
     setHasSearched(true);
+    setActiveFilters(filters);
     try {
-      const data = await searchPapers(searchQuery);
+      const data = await searchPapers({ query: searchQuery.trim(), filters });
       setPapers(data.results || []);
+      setMeta(data.meta || null);
     } catch (err) {
-      setError(err.message || "something went wrong. is the backend running?");
+      const apiMessage = err?.response?.data?.error;
+      setError(apiMessage || err.message || "something went wrong. is the backend running?");
       setPapers([]);
+      setMeta(null);
     } finally {
       setLoading(false);
     }
@@ -32,17 +38,19 @@ function App() {
   return (
     <div className="app">
       <Header />
-      <SearchBar onSearch={handleSearch} />
+      <SearchBar onSearch={handleSearch} suggestedTags={meta?.suggestedTags || []} />
       {hasSearched && (
         <PaperList
           papers={papers}
           loading={loading}
           error={error}
           query={query}
+          meta={meta}
+          filters={activeFilters}
         />
       )}
       <footer className="app__footer">
-        paperscout &mdash; mock data mode &mdash; {new Date().getFullYear()}
+        paperscout &mdash; multi-source workshop scraper &mdash; {new Date().getFullYear()}
       </footer>
     </div>
   );
