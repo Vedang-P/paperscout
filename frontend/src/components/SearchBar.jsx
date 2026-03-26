@@ -29,6 +29,7 @@ export default function SearchBar({ onSearch, suggestedTags = [] }) {
   const [venues, setVenues] = useState(DEFAULT_VENUES);
   const [tags, setTags] = useState([]);
   const [customTag, setCustomTag] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const mergedTagSuggestions = useMemo(() => {
     const set = new Set([...DEFAULT_TAG_SUGGESTIONS, ...(suggestedTags || [])].map((tag) => tag.toLowerCase()));
@@ -36,21 +37,17 @@ export default function SearchBar({ onSearch, suggestedTags = [] }) {
   }, [suggestedTags]);
 
   const toggleVenue = (venue) => {
-    setVenues((previous) =>
-      previous.includes(venue) ? previous.filter((item) => item !== venue) : [...previous, venue]
-    );
+    setVenues((prev) => prev.includes(venue) ? prev.filter((v) => v !== venue) : [...prev, venue]);
   };
 
   const toggleTag = (tag) => {
-    setTags((previous) =>
-      previous.includes(tag) ? previous.filter((item) => item !== tag) : [...previous, tag]
-    );
+    setTags((prev) => prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]);
   };
 
   const addCustomTag = () => {
     const normalized = customTag.trim().toLowerCase();
     if (!normalized) return;
-    setTags((previous) => (previous.includes(normalized) ? previous : [...previous, normalized]));
+    setTags((prev) => prev.includes(normalized) ? prev : [...prev, normalized]);
     setCustomTag("");
   };
 
@@ -61,8 +58,8 @@ export default function SearchBar({ onSearch, suggestedTags = [] }) {
     onSearch({
       query: query.trim(),
       filters: {
-        minYear: Number(minYear) || 2021,
-        maxYear: Number(maxYear) || currentYear,
+        minYear: Math.min(Number(minYear), Number(maxYear)),
+        maxYear: Math.max(Number(minYear), Number(maxYear)),
         minCitations: Number(minCitations) || 0,
         maxCitations: maxCitations === "" ? undefined : Number(maxCitations),
         type,
@@ -72,6 +69,8 @@ export default function SearchBar({ onSearch, suggestedTags = [] }) {
       },
     });
   };
+
+  const filterSummary = `${minYear}–${maxYear} · citations ≥ ${minCitations} · limit ${limit} · ${type}`;
 
   return (
     <form className="search-shell" onSubmit={handleSubmit}>
@@ -91,86 +90,149 @@ export default function SearchBar({ onSearch, suggestedTags = [] }) {
         </button>
       </div>
 
-      <div className="filters">
-        <label className="filters__field">
-          <span>from year</span>
-          <input type="number" min="2021" max={currentYear} value={minYear} onChange={(e) => setMinYear(e.target.value)} />
-        </label>
-        <label className="filters__field">
-          <span>to year</span>
-          <input type="number" min="2021" max={currentYear} value={maxYear} onChange={(e) => setMaxYear(e.target.value)} />
-        </label>
-        <label className="filters__field">
-          <span>min citations</span>
-          <input type="number" min="0" value={minCitations} onChange={(e) => setMinCitations(e.target.value)} />
-        </label>
-        <label className="filters__field">
-          <span>max citations</span>
-          <input type="number" min="0" placeholder="optional" value={maxCitations} onChange={(e) => setMaxCitations(e.target.value)} />
-        </label>
-        <label className="filters__field">
-          <span>type</span>
-          <select value={type} onChange={(e) => setType(e.target.value)}>
-            <option value="workshop">workshop</option>
-            <option value="conference">conference</option>
-            <option value="all">all</option>
-          </select>
-        </label>
-        <label className="filters__field">
-          <span>limit</span>
-          <input type="number" min="1" max="100" value={limit} onChange={(e) => setLimit(e.target.value)} />
-        </label>
-      </div>
-
-      <div className="chip-group">
-        <p className="chip-group__label">venues</p>
-        <div className="chip-group__items">
-          {VENUE_OPTIONS.map((venue) => (
-            <button
-              type="button"
-              key={venue}
-              className={`chip ${venues.includes(venue) ? "chip--active" : ""}`}
-              onClick={() => toggleVenue(venue)}
-            >
-              {venue}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="chip-group">
-        <p className="chip-group__label">tags</p>
-        <div className="chip-group__items">
-          {mergedTagSuggestions.map((tag) => (
-            <button
-              type="button"
-              key={tag}
-              className={`chip ${tags.includes(tag) ? "chip--active" : ""}`}
-              onClick={() => toggleTag(tag)}
-            >
-              {tag}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="custom-tag">
-        <input
-          className="custom-tag__input"
-          type="text"
-          value={customTag}
-          onChange={(event) => setCustomTag(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              addCustomTag();
-            }
-          }}
-          placeholder="add custom tag"
-        />
-        <button type="button" className="custom-tag__button" onClick={addCustomTag}>
-          add tag
+      <div className="filters-section">
+        <button
+          type="button"
+          className="filters-toggle"
+          onClick={() => setFiltersOpen((prev) => !prev)}
+          aria-expanded={filtersOpen}
+        >
+          {filtersOpen ? "▾" : "▸"} filters
         </button>
+
+        {!filtersOpen && <p className="filters-summary">{filterSummary}</p>}
+
+        <div className={`filters-body ${filtersOpen ? "filters-body--open" : "filters-body--closed"}`}>
+          <div className="filters">
+            <label className="filters__field">
+              <div className="filters__label-row">
+                <span>from year</span>
+                <span className="filters__label-value">{minYear}</span>
+              </div>
+              <input
+                type="range"
+                min="2000"
+                max={currentYear}
+                value={minYear}
+                onChange={(e) => setMinYear(Number(e.target.value))}
+              />
+            </label>
+
+            <label className="filters__field">
+              <div className="filters__label-row">
+                <span>to year</span>
+                <span className="filters__label-value">{maxYear}</span>
+              </div>
+              <input
+                type="range"
+                min="2000"
+                max={currentYear}
+                value={maxYear}
+                onChange={(e) => setMaxYear(Number(e.target.value))}
+              />
+            </label>
+
+            <label className="filters__field">
+              <span>type</span>
+              <select value={type} onChange={(e) => setType(e.target.value)}>
+                <option value="workshop">workshop</option>
+                <option value="conference">conference</option>
+                <option value="all">all</option>
+              </select>
+            </label>
+
+            <label className="filters__field">
+              <div className="filters__label-row">
+                <span>min citations</span>
+                <span className="filters__label-value">{minCitations}</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="500"
+                step="5"
+                value={minCitations}
+                onChange={(e) => setMinCitations(Number(e.target.value))}
+              />
+            </label>
+
+            <label className="filters__field">
+              <span>max citations</span>
+              <input
+                type="number"
+                min="0"
+                placeholder="optional"
+                value={maxCitations}
+                onChange={(e) => setMaxCitations(e.target.value)}
+              />
+            </label>
+
+            <label className="filters__field">
+              <div className="filters__label-row">
+                <span>limit</span>
+                <span className="filters__label-value">{limit}</span>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="100"
+                value={limit}
+                onChange={(e) => setLimit(Number(e.target.value))}
+              />
+            </label>
+          </div>
+
+          <div className="chip-group">
+            <p className="chip-group__label">venues</p>
+            <div className="chip-group__items">
+              {VENUE_OPTIONS.map((venue) => (
+                <button
+                  type="button"
+                  key={venue}
+                  className={`chip ${venues.includes(venue) ? "chip--active" : ""}`}
+                  onClick={() => toggleVenue(venue)}
+                >
+                  {venue}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="chip-group">
+            <p className="chip-group__label">tags</p>
+            <div className="chip-group__items">
+              {mergedTagSuggestions.map((tag) => (
+                <button
+                  type="button"
+                  key={tag}
+                  className={`chip ${tags.includes(tag) ? "chip--active" : ""}`}
+                  onClick={() => toggleTag(tag)}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="custom-tag">
+            <input
+              className="custom-tag__input"
+              type="text"
+              value={customTag}
+              onChange={(event) => setCustomTag(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  addCustomTag();
+                }
+              }}
+              placeholder="add custom tag"
+            />
+            <button type="button" className="custom-tag__button" onClick={addCustomTag}>
+              add tag
+            </button>
+          </div>
+        </div>
       </div>
     </form>
   );

@@ -4,7 +4,11 @@ export default function PaperList({ papers, loading, error, query, meta, filters
   if (loading) {
     return (
       <div className="paper-list">
-        <p className="paper-list__status">searching...</p>
+        <div className="loading-dots" role="status" aria-label="searching">
+          <span className="loading-dots__dot" />
+          <span className="loading-dots__dot" />
+          <span className="loading-dots__dot" />
+        </div>
       </div>
     );
   }
@@ -32,7 +36,7 @@ export default function PaperList({ papers, loading, error, query, meta, filters
       </p>
       {filters && (
         <p className="paper-list__filters">
-          {filters.type} · years {filters.minYear}-{filters.maxYear} · min citations {filters.minCitations}
+          {filters.type} · years {filters.minYear}–{filters.maxYear} · min citations {filters.minCitations}
         </p>
       )}
       {meta?.dataSources?.length > 0 && (
