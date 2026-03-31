@@ -15,7 +15,7 @@ const TAG_PATTERNS = [
   { tag: "safety", patterns: ["safety", "robust", "adversarial", "bias"] },
 ];
 
-function inferTags({ title, abstract, venue, userTags = [] }) {
+function inferTags({ title, abstract, venue }) {
   const text = `${title || ""} ${abstract || ""} ${venue || ""}`.toLowerCase();
   const inferred = [];
 
@@ -25,7 +25,7 @@ function inferTags({ title, abstract, venue, userTags = [] }) {
     }
   }
 
-  return toUniqueList([...inferred, ...(userTags || []).map((tag) => String(tag).toLowerCase())]);
+  return toUniqueList(inferred);
 }
 
 module.exports = { inferTags };

@@ -57,4 +57,16 @@ function parseSearchFilters(queryParams = {}) {
   };
 }
 
-module.exports = { parseSearchFilters };
+function parseRecommendationModelOptions(queryParams = {}) {
+  const diversity = parseNumber(queryParams.diversity, 0.25);
+  return {
+    diversity: clamp(Number.isFinite(diversity) ? diversity : 0.25, 0, 1),
+    preferredAuthors: toUniqueList(parseCsvParam(queryParams.preferredAuthors)),
+    excludeAuthors: toUniqueList(parseCsvParam(queryParams.excludeAuthors)),
+    excludeTags: toUniqueList(parseCsvParam(queryParams.excludeTags)),
+    seedTitles: toUniqueList(parseCsvParam(queryParams.seedTitles)),
+    keywords: toUniqueList(parseCsvParam(queryParams.keywords)),
+  };
+}
+
+module.exports = { parseSearchFilters, parseRecommendationModelOptions };
