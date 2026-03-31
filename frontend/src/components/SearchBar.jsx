@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 
-const DEFAULT_VENUES = ["ICLR", "ECCV", "ACCV"];
 const VENUE_OPTIONS = ["ICLR", "ECCV", "ACCV", "ICCV", "CVPR", "ACL", "EMNLP", "NAACL"];
+const DEFAULT_VENUES = [...VENUE_OPTIONS];
 const DEFAULT_TAG_SUGGESTIONS = [
   "nlp",
   "cv",

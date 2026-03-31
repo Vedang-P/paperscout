@@ -24,7 +24,9 @@ export default function PaperList({ papers, loading, error, query, meta, filters
   if (!papers || papers.length === 0) {
     return (
       <div className="paper-list">
-        <p className="paper-list__status">no results found.</p>
+        <p className="paper-list__status">
+          no results found. try clearing tags, reducing min citations, or switching type to all.
+        </p>
       </div>
     );
   }
@@ -41,6 +43,11 @@ export default function PaperList({ papers, loading, error, query, meta, filters
       )}
       {meta?.dataSources?.length > 0 && (
         <p className="paper-list__sources">sources: {meta.dataSources.join(" · ")}</p>
+      )}
+      {meta?.fallback?.steps?.length > 0 && (
+        <p className="paper-list__sources">
+          fallback used: {meta.fallback.steps.join(" · ")}
+        </p>
       )}
       {papers.map((paper) => (
         <PaperCard key={paper.id} paper={paper} />

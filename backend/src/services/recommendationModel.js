@@ -1,4 +1,4 @@
-const { CURRENT_YEAR, SUGGESTED_TAGS } = require("../config/searchConfig");
+const { CURRENT_YEAR, SUGGESTED_TAGS, SUPPORTED_VENUES } = require("../config/searchConfig");
 const { buildIdfMaps, buildTfIdfVector, cosineSimilarity, tokenCoverageScore } = require("./vectorSpace");
 const { lower, normalizeWhitespace, parseCsvParam, tokenize } = require("../utils/text");
 
@@ -66,7 +66,8 @@ function buildProfile({ query, filters, model }) {
   };
 }
 
-function applyHardFilters(candidates, query, filters, profile) {
+function applyHardFilters(candidates, query, filters, profile, options = {}) {
+  const tagMatchMode = options.tagMatchMode || "all";
   return candidates.filter((paper) => {
     if (!paper.title || !paper.year) return false;
     if (paper.year < filters.minYear || paper.year > filters.maxYear) return false;
@@ -85,8 +86,10 @@ function applyHardFilters(candidates, query, filters, profile) {
 
     if (filters.tags.length > 0) {
       const tags = (paper.tags || []).map((tag) => lower(tag));
-      const hasAll = filters.tags.every((tag) => tags.includes(lower(tag)));
-      if (!hasAll) return false;
+      const hitCount = filters.tags.filter((tag) => tags.includes(lower(tag))).length;
+      const matches =
+        tagMatchMode === "any" ? hitCount > 0 : hitCount === filters.tags.length;
+      if (!matches) return false;
     }
 
     if (profile.excludeTags.length > 0) {
@@ -257,19 +260,84 @@ function makeReasoningSummary(features) {
   return reasons.slice(0, 3);
 }
 
+function mergeById(basePapers, newPapers) {
+  const map = new Map(basePapers.map((paper) => [paper.id, paper]));
+  for (const paper of newPapers) {
+    if (!map.has(paper.id)) {
+      map.set(paper.id, paper);
+    }
+  }
+  return Array.from(map.values());
+}
+
 function recommendPapers({ query, filters, candidates, sourceStats, model }) {
   const profile = buildProfile({ query, filters, model });
   let filteredCandidates = applyHardFilters(candidates, query, filters, profile);
   const fallbackIds = new Set();
+  const fallbackSteps = [];
+
+  if (filteredCandidates.length === 0 && filters.tags.length > 0) {
+    const relaxedByTagMode = applyHardFilters(
+      candidates,
+      query,
+      filters,
+      profile,
+      { tagMatchMode: "any" }
+    );
+    if (relaxedByTagMode.length > 0) {
+      filteredCandidates = relaxedByTagMode;
+      fallbackSteps.push("tag_match_relaxed_to_any");
+    }
+  }
 
   if (filters.type === "workshop" && filteredCandidates.length < Math.max(4, Math.floor(filters.limit * 0.35))) {
-    const relaxedFilters = { ...filters, type: "all" };
-    const relaxedCandidates = applyHardFilters(candidates, query, relaxedFilters, profile);
-    const strictIds = new Set(filteredCandidates.map((paper) => paper.id));
-    for (const paper of relaxedCandidates) {
-      if (strictIds.has(paper.id)) continue;
-      fallbackIds.add(paper.id);
-      filteredCandidates.push(paper);
+    const relaxedType = { ...filters, type: "all" };
+    const relaxedCandidates = applyHardFilters(candidates, query, relaxedType, profile);
+    const merged = mergeById(filteredCandidates, relaxedCandidates);
+    for (const paper of merged) {
+      if (!filteredCandidates.find((existing) => existing.id === paper.id)) {
+        fallbackIds.add(paper.id);
+      }
+    }
+    if (merged.length > filteredCandidates.length) {
+      fallbackSteps.push("type_relaxed_to_all");
+      filteredCandidates = merged;
+    }
+  }
+
+  if (filteredCandidates.length === 0 && filters.tags.length > 0) {
+    const relaxedTags = { ...filters, tags: [] };
+    const relaxedCandidates = applyHardFilters(candidates, query, relaxedTags, profile);
+    if (relaxedCandidates.length > 0) {
+      filteredCandidates = relaxedCandidates;
+      fallbackSteps.push("tags_removed");
+      for (const paper of filteredCandidates) fallbackIds.add(paper.id);
+    }
+  }
+
+  if (filteredCandidates.length === 0 && filters.venues.length > 0) {
+    const widenedVenues = { ...filters, venues: SUPPORTED_VENUES, type: "all", tags: [] };
+    const widenedCandidates = applyHardFilters(candidates, query, widenedVenues, profile);
+    if (widenedCandidates.length > 0) {
+      filteredCandidates = widenedCandidates;
+      fallbackSteps.push("venues_widened");
+      for (const paper of filteredCandidates) fallbackIds.add(paper.id);
+    }
+  }
+
+  if (filteredCandidates.length === 0 && filters.minCitations > 0) {
+    const relaxedCitations = {
+      ...filters,
+      minCitations: 0,
+      type: "all",
+      venues: SUPPORTED_VENUES,
+      tags: [],
+    };
+    const relaxedCandidates = applyHardFilters(candidates, query, relaxedCitations, profile);
+    if (relaxedCandidates.length > 0) {
+      filteredCandidates = relaxedCandidates;
+      fallbackSteps.push("min_citations_relaxed");
+      for (const paper of filteredCandidates) fallbackIds.add(paper.id);
     }
   }
 
@@ -303,6 +371,7 @@ function recommendPapers({ query, filters, candidates, sourceStats, model }) {
       fallback: {
         workshopFallbackUsed: fallbackIds.size > 0,
         fallbackCount: fallbackIds.size,
+        steps: fallbackSteps,
       },
       suggestedTags: SUGGESTED_TAGS,
     },
