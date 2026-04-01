@@ -1,4 +1,4 @@
-const { tokenize } = require("../utils/text");
+const { hasFuzzyTokenMatch, tokenize } = require("../utils/text");
 
 function buildTermFrequency(text) {
   const tf = new Map();
@@ -60,11 +60,21 @@ function cosineSimilarity(left, right) {
 function tokenCoverageScore(targetText, queryTokens) {
   if (!queryTokens || queryTokens.length === 0) return 0;
   const haystackTokens = new Set(tokenize(targetText));
-  let hit = 0;
+  const haystackList = Array.from(haystackTokens);
+  let hitWeight = 0;
+
   for (const token of queryTokens) {
-    if (haystackTokens.has(token)) hit += 1;
+    if (haystackTokens.has(token)) {
+      hitWeight += 1;
+      continue;
+    }
+
+    if (hasFuzzyTokenMatch(token, haystackList)) {
+      hitWeight += 0.72;
+    }
   }
-  return hit / queryTokens.length;
+
+  return Math.min(1, hitWeight / queryTokens.length);
 }
 
 module.exports = {

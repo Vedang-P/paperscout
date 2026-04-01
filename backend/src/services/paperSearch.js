@@ -1,4 +1,5 @@
 const { gatherCandidates } = require("./candidateAggregator");
+const { normalizeQueryTypos } = require("./fuzzyQuery");
 const { recommendPapers } = require("./recommendationModel");
 const { parseRecommendationModelOptions } = require("./filterParser");
 const { normalizeWhitespace } = require("../utils/text");
@@ -30,6 +31,13 @@ async function runRecommendationPipeline({ query, filters, modelOptions }) {
       results: [],
       meta: {
         normalizedQuery: "",
+        sourceQuery: "",
+        queryNormalization: {
+          originalQuery: "",
+          correctedQuery: "",
+          corrections: [],
+          usedFuzzyCorrection: false,
+        },
         totalBeforeFilter: 0,
         totalAfterFilter: 0,
         dataSources: ["OpenAlex", "DBLP", "CVF Open Access"],
@@ -39,14 +47,36 @@ async function runRecommendationPipeline({ query, filters, modelOptions }) {
     };
   }
 
-  const { candidates, sourceStats } = await gatherCandidates(normalizedQuery, filters);
-  return recommendPapers({
-    query: normalizedQuery,
+  const queryNormalization = normalizeQueryTypos(normalizedQuery, [
+    ...(filters.tags || []),
+    ...(filters.tasks || []),
+    ...(filters.datasets || []),
+    ...(filters.paperTypes || []),
+    ...(filters.venues || []),
+    ...(modelOptions.keywords || []),
+  ]);
+  const rankingQuery = queryNormalization.correctedQuery || normalizedQuery;
+  const sourceQuery = queryNormalization.usedFuzzyCorrection
+    ? normalizeWhitespace(`${normalizedQuery} ${rankingQuery}`)
+    : rankingQuery;
+
+  const { candidates, sourceStats } = await gatherCandidates(sourceQuery, filters);
+  const output = recommendPapers({
+    query: rankingQuery,
     filters,
     candidates,
     sourceStats,
     model: modelOptions,
   });
+
+  return {
+    ...output,
+    meta: {
+      ...output.meta,
+      sourceQuery,
+      queryNormalization,
+    },
+  };
 }
 
 async function searchPapersAcrossSources(query, filters) {

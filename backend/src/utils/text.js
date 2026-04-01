@@ -39,6 +39,78 @@ function tokenize(value) {
     .filter(Boolean);
 }
 
+function boundedLevenshtein(left, right, maxDistance = 2) {
+  const a = String(left || "");
+  const b = String(right || "");
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  if (Math.abs(a.length - b.length) > maxDistance) return maxDistance + 1;
+
+  let previous = new Array(b.length + 1);
+  let current = new Array(b.length + 1);
+  for (let j = 0; j <= b.length; j += 1) previous[j] = j;
+
+  for (let i = 1; i <= a.length; i += 1) {
+    current[0] = i;
+    let rowMin = current[0];
+
+    for (let j = 1; j <= b.length; j += 1) {
+      const substitutionCost = a[i - 1] === b[j - 1] ? 0 : 1;
+      current[j] = Math.min(
+        previous[j] + 1,
+        current[j - 1] + 1,
+        previous[j - 1] + substitutionCost
+      );
+      if (current[j] < rowMin) rowMin = current[j];
+    }
+
+    if (rowMin > maxDistance) return maxDistance + 1;
+
+    const swap = previous;
+    previous = current;
+    current = swap;
+  }
+
+  return previous[b.length];
+}
+
+function maxTypoDistance(token) {
+  const size = String(token || "").length;
+  if (size <= 4) return 1;
+  if (size <= 7) return 2;
+  return 2;
+}
+
+function fuzzyTokenMatch(queryToken, candidateToken) {
+  const q = String(queryToken || "").toLowerCase();
+  const c = String(candidateToken || "").toLowerCase();
+  if (!q || !c) return false;
+  if (q === c) return true;
+  if (q.length < 3 || c.length < 3) return false;
+  if (Math.abs(q.length - c.length) > 2) return false;
+  if (q[0] !== c[0] && Math.min(q.length, c.length) >= 5) return false;
+
+  const maxDistance = Math.min(maxTypoDistance(q), maxTypoDistance(c));
+  return boundedLevenshtein(q, c, maxDistance) <= maxDistance;
+}
+
+function hasFuzzyTokenMatch(token, candidateTokens = []) {
+  const normalizedToken = String(token || "").toLowerCase();
+  if (!normalizedToken) return false;
+  for (const candidate of candidateTokens) {
+    const normalizedCandidate = String(candidate || "").toLowerCase();
+    if (!normalizedCandidate) continue;
+    if (fuzzyTokenMatch(normalizedToken, normalizedCandidate)) return true;
+
+    const subTokens = normalizedCandidate.split(/[+.-]+/g).filter(Boolean);
+    for (const subToken of subTokens) {
+      if (fuzzyTokenMatch(normalizedToken, subToken)) return true;
+    }
+  }
+  return false;
+}
+
 function includesQuery(haystack, query) {
   const h = lower(haystack);
   const q = lower(query);
@@ -46,7 +118,10 @@ function includesQuery(haystack, query) {
   if (h.includes(q)) return true;
   const tokens = tokenize(q);
   if (tokens.length === 0) return false;
-  return tokens.every((token) => h.includes(token));
+  const haystackTokens = tokenize(h);
+  return tokens.every(
+    (token) => h.includes(token) || hasFuzzyTokenMatch(token, haystackTokens)
+  );
 }
 
 function makeAbsoluteUrl(baseUrl, maybeRelativeUrl) {
@@ -121,6 +196,9 @@ module.exports = {
   toArray,
   parseCsvParam,
   tokenize,
+  boundedLevenshtein,
+  fuzzyTokenMatch,
+  hasFuzzyTokenMatch,
   includesQuery,
   makeAbsoluteUrl,
   parseYear,
