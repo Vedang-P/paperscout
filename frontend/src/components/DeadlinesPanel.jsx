@@ -33,6 +33,8 @@ export default function DeadlinesPanel({
   error,
   updatedAt,
   eventType = "all",
+  openTotal = 0,
+  fallbackMode = "none",
   onEventTypeChange,
   onRefresh,
 }) {
@@ -92,7 +94,11 @@ export default function DeadlinesPanel({
       <header className="panel__header panel__header--inline">
         <div>
           <h2 className="panel__title">active deadlines</h2>
-          <p className="panel__caption">verified official deadlines only</p>
+          <p className="panel__caption">
+            {fallbackMode === "closed_only"
+              ? "no open verified deadlines right now; showing latest verified closed deadlines"
+              : "verified official deadlines only"}
+          </p>
         </div>
         <button type="button" className="panel__button" onClick={onRefresh}>
           refresh
@@ -118,7 +124,7 @@ export default function DeadlinesPanel({
 
       {updatedAt ? (
         <p className="panel__muted panel__muted--tiny">
-          updated {new Date(updatedAt).toLocaleString()}
+          updated {new Date(updatedAt).toLocaleString()} · open now {openTotal}
         </p>
       ) : null}
 
@@ -130,7 +136,7 @@ export default function DeadlinesPanel({
       {error ? <p className="panel__error">{error}</p> : null}
 
       {!loading && !error && deadlines.length === 0 ? (
-        <p className="panel__muted">no active deadlines found.</p>
+        <p className="panel__muted">no verified deadlines found from official sources.</p>
       ) : null}
 
       <div className="deadline-list">
@@ -150,10 +156,23 @@ export default function DeadlinesPanel({
             </div>
 
             <p className="deadline-card__meta">
-              {deadline.eventType}
-              {deadline.deadlineType ? ` · ${deadline.deadlineType}` : ""}
-              {" · "} {formatDays(deadline.daysRemaining)} {" · "}
-              due {formatDate(deadline.deadline)}
+              <span>{deadline.eventType}</span>
+              {deadline.deadlineType ? (
+                <>
+                  <span className="deadline-card__meta-sep" aria-hidden="true">
+                    ·
+                  </span>
+                  <span>{deadline.deadlineType}</span>
+                </>
+              ) : null}
+              <span className="deadline-card__meta-sep" aria-hidden="true">
+                ·
+              </span>
+              <span>{formatDays(deadline.daysRemaining)}</span>
+              <span className="deadline-card__meta-sep" aria-hidden="true">
+                ·
+              </span>
+              <span>due {formatDate(deadline.deadline)}</span>
             </p>
 
             <div className="deadline-card__actions">

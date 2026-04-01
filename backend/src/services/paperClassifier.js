@@ -40,16 +40,21 @@ function detectCodeLink(links = []) {
 function inferPaperTypes(paper) {
   const text = lower(`${paper.title || ""} ${paper.venue || ""} ${paper.source || ""}`);
   const types = new Set();
+  const isJournal =
+    text.includes("journal") ||
+    text.includes("transactions") ||
+    text.includes("j.") ||
+    text.includes("vol.");
+  const isWorkshop = paper.isWorkshop || inferWorkshopFlag(text);
 
-  if (paper.isWorkshop || inferWorkshopFlag(text)) {
+  if (isWorkshop) {
     types.add("workshop");
+  } else if (isJournal) {
+    types.add("journal");
   } else {
     types.add("conference");
   }
 
-  if (text.includes("journal") || text.includes("transactions") || text.includes("j.") || text.includes("vol.")) {
-    types.add("journal");
-  }
   if (text.includes("arxiv") || text.includes("preprint")) {
     types.add("preprint");
   }

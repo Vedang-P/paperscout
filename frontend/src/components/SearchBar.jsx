@@ -1,17 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 const VENUE_OPTIONS = ["ICLR", "ECCV", "ACCV", "ICCV", "CVPR", "ACL", "EMNLP", "NAACL"];
-const TYPE_OPTIONS = ["workshop", "conference", "all"];
+const TYPE_OPTIONS = ["workshop", "conference", "journal"];
 const PAPER_TYPE_OPTIONS = [
-  "workshop",
-  "conference",
-  "journal",
   "preprint",
   "survey",
   "demo",
   "dataset",
   "benchmark",
 ];
+const SLIDER_TYPE_SET = new Set(TYPE_OPTIONS);
 const TASK_OPTIONS = [
   "segmentation",
   "detection",
@@ -37,10 +35,6 @@ const DATASET_OPTIONS = [
   "nuscenes",
 ];
 const DEFAULT_VENUES = [...VENUE_OPTIONS];
-const PRESETS_STORAGE_KEY = "sarveshu-search-presets";
-const SEARCH_ALERTS_STORAGE_KEY = "sarveshu-search-alerts";
-const MAX_PRESETS = 20;
-const MAX_ALERTS = 20;
 
 const DEFAULT_TAG_SUGGESTIONS = [
   "nlp",
@@ -57,38 +51,11 @@ const DEFAULT_TAG_SUGGESTIONS = [
   "safety",
 ];
 
-function parseStoredPresets() {
-  if (typeof window === "undefined") return [];
-  try {
-    const parsed = JSON.parse(localStorage.getItem(PRESETS_STORAGE_KEY) || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function parseStoredSearchAlerts() {
-  if (typeof window === "undefined") return [];
-  try {
-    const parsed = JSON.parse(localStorage.getItem(SEARCH_ALERTS_STORAGE_KEY) || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
 function uniqueLowerCase(values) {
   const normalized = (Array.isArray(values) ? values : [])
     .map((value) => String(value || "").trim().toLowerCase())
     .filter(Boolean);
   return Array.from(new Set(normalized));
-}
-
-function createId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `preset-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
 }
 
 function ToggleSwitch({ checked, label, onToggle }) {
@@ -100,6 +67,32 @@ function ToggleSwitch({ checked, label, onToggle }) {
         <span className="switch__slider" />
       </span>
     </label>
+  );
+}
+
+function CollapsibleFilterSection({ title, isOpen, onToggle, children }) {
+  return (
+    <section className="filter-section">
+      <button
+        type="button"
+        className="filter-section__toggle"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+      >
+        <span className="filter-section__title">{title}</span>
+        <span
+          className={
+            isOpen
+              ? "filter-section__chevron filter-section__chevron--open"
+              : "filter-section__chevron"
+          }
+          aria-hidden="true"
+        >
+          ▾
+        </span>
+      </button>
+      {isOpen ? <div className="filter-section__body">{children}</div> : null}
+    </section>
   );
 }
 
@@ -121,12 +114,16 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
   const [hasCodeOnly, setHasCodeOnly] = useState(false);
   const [customTag, setCustomTag] = useState("");
   const [customTags, setCustomTags] = useState([]);
-
-  const [presetName, setPresetName] = useState("");
-  const [presetId, setPresetId] = useState("");
-  const [savedPresets, setSavedPresets] = useState(() => parseStoredPresets());
-  const [alertName, setAlertName] = useState("");
-  const [savedAlerts, setSavedAlerts] = useState(() => parseStoredSearchAlerts());
+  const [openSections, setOpenSections] = useState({
+    typeScope: true,
+    venues: true,
+    topicTags: true,
+    paperTypes: false,
+    tasks: false,
+    datasets: false,
+    implementation: false,
+    customTags: false,
+  });
 
   const mergedTagSuggestions = useMemo(() => {
     const combined = [...DEFAULT_TAG_SUGGESTIONS, ...(suggestedTags || []), ...customTags];
@@ -136,7 +133,8 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
   const mergedPaperTypes = useMemo(() => {
     const fromMeta = uniqueLowerCase(availableFilters?.paperTypes || []);
     const fallback = uniqueLowerCase(PAPER_TYPE_OPTIONS);
-    return fromMeta.length > 0 ? fromMeta : fallback;
+    const source = fromMeta.length > 0 ? fromMeta : fallback;
+    return source.filter((paperType) => !SLIDER_TYPE_SET.has(paperType));
   }, [availableFilters]);
 
   const mergedTasks = useMemo(() => {
@@ -150,16 +148,6 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
     const fallback = uniqueLowerCase(DATASET_OPTIONS);
     return fromMeta.length > 0 ? fromMeta : fallback;
   }, [availableFilters]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(savedPresets));
-  }, [savedPresets]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    localStorage.setItem(SEARCH_ALERTS_STORAGE_KEY, JSON.stringify(savedAlerts));
-  }, [savedAlerts]);
 
   const toggleVenue = (venue) => {
     setVenues((previous) =>
@@ -197,9 +185,19 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
     setTags((previous) => previous.filter((tag) => tag !== normalized));
   };
 
+  const toggleSection = (sectionKey) => {
+    setOpenSections((previous) => ({
+      ...previous,
+      [sectionKey]: !previous[sectionKey],
+    }));
+  };
+
   const buildFilters = () => {
     const normalizedMinYear = Math.min(minYear, maxYear);
     const normalizedMaxYear = Math.max(minYear, maxYear);
+    const additionalPaperTypes = paperTypes.filter(
+      (paperType) => !SLIDER_TYPE_SET.has(String(paperType || "").toLowerCase())
+    );
 
     return {
       minYear: normalizedMinYear,
@@ -209,7 +207,7 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
       limit,
       venues,
       tags,
-      paperTypes,
+      paperTypes: additionalPaperTypes,
       tasks,
       datasets,
       hasCode: hasCodeOnly ? true : null,
@@ -229,117 +227,6 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
   const handleSubmit = (event) => {
     event.preventDefault();
     runSearch(query);
-  };
-
-  const handleSavePreset = () => {
-    const normalizedName = presetName.trim() || query.trim() || "preset";
-    const preset = {
-      id: createId(),
-      name: normalizedName,
-      query: query.trim(),
-      filters: buildFilters(),
-      createdAt: new Date().toISOString(),
-    };
-
-    setSavedPresets((previous) => [preset, ...previous].slice(0, MAX_PRESETS));
-    setPresetId(preset.id);
-    setPresetName("");
-  };
-
-  const applyPreset = () => {
-    const selected = savedPresets.find((preset) => preset.id === presetId);
-    if (!selected) return;
-
-    const presetQuery = String(selected.query || "");
-    const presetFilters = selected.filters || {};
-
-    setQuery(presetQuery);
-    setMinYear(Number(presetFilters.minYear) || 2021);
-    setMaxYear(Number(presetFilters.maxYear) || currentYear);
-    setMinCitations(Number(presetFilters.minCitations) || 0);
-    setLimit(Number(presetFilters.limit) || 24);
-
-    const presetType = String(presetFilters.type || "workshop").toLowerCase();
-    const resolvedTypeIndex = Math.max(0, TYPE_OPTIONS.indexOf(presetType));
-    setTypeIndex(resolvedTypeIndex);
-
-    const presetVenues = Array.isArray(presetFilters.venues)
-      ? presetFilters.venues.filter((venue) => VENUE_OPTIONS.includes(venue))
-      : DEFAULT_VENUES;
-
-    const nextTags = uniqueLowerCase(presetFilters.tags || []);
-    const knownBaseTags = uniqueLowerCase([
-      ...DEFAULT_TAG_SUGGESTIONS,
-      ...(suggestedTags || []),
-    ]);
-    const inferredCustomTags = nextTags.filter((tag) => !knownBaseTags.includes(tag));
-
-    setVenues(presetVenues.length > 0 ? presetVenues : DEFAULT_VENUES);
-    setTags(nextTags);
-    setCustomTags(inferredCustomTags);
-    setPaperTypes(uniqueLowerCase(presetFilters.paperTypes || []));
-    setTasks(uniqueLowerCase(presetFilters.tasks || []));
-    setDatasets(uniqueLowerCase(presetFilters.datasets || []));
-    setHasCodeOnly(Boolean(presetFilters.hasCode));
-
-    if (presetQuery.trim()) {
-      onSearch({
-        query: presetQuery.trim(),
-        filters: presetFilters,
-      });
-    }
-  };
-
-  const deletePreset = () => {
-    if (!presetId) return;
-    setSavedPresets((previous) => previous.filter((preset) => preset.id !== presetId));
-    setPresetId("");
-  };
-
-  const handleSaveAlert = async () => {
-    const normalizedQuery = query.trim();
-    if (!normalizedQuery) return;
-
-    if (typeof Notification !== "undefined" && Notification.permission === "default") {
-      try {
-        await Notification.requestPermission();
-      } catch {
-        // Ignore notification permission errors.
-      }
-    }
-
-    const alert = {
-      id: createId(),
-      name: alertName.trim() || normalizedQuery.slice(0, 60),
-      query: normalizedQuery,
-      filters: buildFilters(),
-      enabled: true,
-      lastTopPaperIds: [],
-      lastResultCount: 0,
-      lastCheckedAt: null,
-      lastNotifiedAt: null,
-      createdAt: new Date().toISOString(),
-    };
-
-    setSavedAlerts((previous) => [alert, ...previous].slice(0, MAX_ALERTS));
-    setAlertName("");
-  };
-
-  const toggleAlertEnabled = (alertId) => {
-    setSavedAlerts((previous) =>
-      previous.map((alert) =>
-        alert.id === alertId
-          ? {
-              ...alert,
-              enabled: !alert.enabled,
-            }
-          : alert
-      )
-    );
-  };
-
-  const deleteAlert = (alertId) => {
-    setSavedAlerts((previous) => previous.filter((alert) => alert.id !== alertId));
   };
 
   return (
@@ -421,34 +308,42 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
           </label>
         </div>
 
-        <div className="type-slider">
-          <p className="type-slider__label">venue scope</p>
-          <input
-            type="range"
-            min="0"
-            max={TYPE_OPTIONS.length - 1}
-            step="1"
-            value={typeIndex}
-            onChange={(event) => setTypeIndex(Number(event.target.value))}
-          />
-          <div className="type-slider__ticks">
-            {TYPE_OPTIONS.map((option, index) => (
-              <span
-                key={option}
-                className={
-                  index === typeIndex
-                    ? "type-slider__tick type-slider__tick--active"
-                    : "type-slider__tick"
-                }
-              >
-                {option}
-              </span>
-            ))}
+        <CollapsibleFilterSection
+          title="paper type scope"
+          isOpen={openSections.typeScope}
+          onToggle={() => toggleSection("typeScope")}
+        >
+          <div className="type-slider">
+            <input
+              type="range"
+              min="0"
+              max={TYPE_OPTIONS.length - 1}
+              step="1"
+              value={typeIndex}
+              onChange={(event) => setTypeIndex(Number(event.target.value))}
+            />
+            <div className="type-slider__ticks">
+              {TYPE_OPTIONS.map((option, index) => (
+                <span
+                  key={option}
+                  className={
+                    index === typeIndex
+                      ? "type-slider__tick type-slider__tick--active"
+                      : "type-slider__tick"
+                  }
+                >
+                  {option}
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
+        </CollapsibleFilterSection>
 
-        <div className="switch-group">
-          <p className="switch-group__title">venues</p>
+        <CollapsibleFilterSection
+          title="venues"
+          isOpen={openSections.venues}
+          onToggle={() => toggleSection("venues")}
+        >
           <div className="switch-list">
             {VENUE_OPTIONS.map((venue) => (
               <ToggleSwitch
@@ -459,10 +354,13 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
               />
             ))}
           </div>
-        </div>
+        </CollapsibleFilterSection>
 
-        <div className="switch-group">
-          <p className="switch-group__title">topic tags</p>
+        <CollapsibleFilterSection
+          title="topic tags"
+          isOpen={openSections.topicTags}
+          onToggle={() => toggleSection("topicTags")}
+        >
           <div className="switch-list">
             {mergedTagSuggestions.map((tag) => (
               <ToggleSwitch
@@ -473,10 +371,13 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
               />
             ))}
           </div>
-        </div>
+        </CollapsibleFilterSection>
 
-        <div className="switch-group">
-          <p className="switch-group__title">paper record types</p>
+        <CollapsibleFilterSection
+          title="additional paper types"
+          isOpen={openSections.paperTypes}
+          onToggle={() => toggleSection("paperTypes")}
+        >
           <div className="switch-list">
             {mergedPaperTypes.map((paperType) => (
               <ToggleSwitch
@@ -487,10 +388,13 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
               />
             ))}
           </div>
-        </div>
+        </CollapsibleFilterSection>
 
-        <div className="switch-group">
-          <p className="switch-group__title">tasks</p>
+        <CollapsibleFilterSection
+          title="tasks"
+          isOpen={openSections.tasks}
+          onToggle={() => toggleSection("tasks")}
+        >
           <div className="switch-list">
             {mergedTasks.map((task) => (
               <ToggleSwitch
@@ -501,10 +405,13 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
               />
             ))}
           </div>
-        </div>
+        </CollapsibleFilterSection>
 
-        <div className="switch-group">
-          <p className="switch-group__title">datasets</p>
+        <CollapsibleFilterSection
+          title="datasets"
+          isOpen={openSections.datasets}
+          onToggle={() => toggleSection("datasets")}
+        >
           <div className="switch-list">
             {mergedDatasets.map((dataset) => (
               <ToggleSwitch
@@ -515,10 +422,13 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
               />
             ))}
           </div>
-        </div>
+        </CollapsibleFilterSection>
 
-        <div className="switch-group">
-          <p className="switch-group__title">implementation</p>
+        <CollapsibleFilterSection
+          title="implementation"
+          isOpen={openSections.implementation}
+          onToggle={() => toggleSection("implementation")}
+        >
           <div className="switch-list switch-list--single">
             <ToggleSwitch
               label="has linked code"
@@ -526,129 +436,55 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
               onToggle={() => setHasCodeOnly((previous) => !previous)}
             />
           </div>
-        </div>
+        </CollapsibleFilterSection>
 
-        <div className="custom-tag">
-          <input
-            className="custom-tag__input"
-            type="text"
-            value={customTag}
-            onChange={(event) => setCustomTag(event.target.value)}
-            placeholder="add custom tag"
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                addCustomTag();
-              }
-            }}
-          />
-          <button type="button" className="custom-tag__button" onClick={addCustomTag}>
-            add
-          </button>
-        </div>
-
-        {customTags.length > 0 ? (
-          <div className="custom-tags-added">
-            <p className="switch-group__title">custom tags added</p>
-            <div className="custom-tags-added__list">
-              {customTags.map((tag) => (
-                <span key={`custom-tag-${tag}`} className="custom-tags-added__item">
-                  <span>{tag}</span>
-                  <button
-                    type="button"
-                    className="custom-tags-added__remove"
-                    onClick={() => removeCustomTag(tag)}
-                    aria-label={`remove custom tag ${tag}`}
-                    title={`remove ${tag}`}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        <div className="preset-bar">
-          <div className="preset-bar__row">
+        <CollapsibleFilterSection
+          title="custom tags"
+          isOpen={openSections.customTags}
+          onToggle={() => toggleSection("customTags")}
+        >
+          <div className="custom-tag">
             <input
-              className="preset-bar__input"
+              className="custom-tag__input"
               type="text"
-              value={presetName}
-              onChange={(event) => setPresetName(event.target.value)}
-              placeholder="preset name"
+              value={customTag}
+              onChange={(event) => setCustomTag(event.target.value)}
+              placeholder="add custom tag"
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  addCustomTag();
+                }
+              }}
             />
-            <button type="button" className="preset-bar__button" onClick={handleSavePreset}>
-              save preset
+            <button type="button" className="custom-tag__button" onClick={addCustomTag}>
+              add
             </button>
           </div>
 
-          <div className="preset-bar__row">
-            <select
-              className="preset-bar__select"
-              value={presetId}
-              onChange={(event) => setPresetId(event.target.value)}
-            >
-              <option value="">select preset</option>
-              {savedPresets.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.name}
-                </option>
-              ))}
-            </select>
-            <button type="button" className="preset-bar__button" onClick={applyPreset}>
-              apply
-            </button>
-            <button type="button" className="preset-bar__button" onClick={deletePreset}>
-              delete
-            </button>
-          </div>
-        </div>
-
-        <div className="alerts-bar">
-          <p className="switch-group__title">notify me alerts</p>
-          <div className="preset-bar__row">
-            <input
-              className="preset-bar__input"
-              type="text"
-              value={alertName}
-              onChange={(event) => setAlertName(event.target.value)}
-              placeholder="alert name"
-            />
-            <button type="button" className="preset-bar__button" onClick={handleSaveAlert}>
-              notify me
-            </button>
-          </div>
-
-          {savedAlerts.length > 0 ? (
-            <div className="alerts-list">
-              {savedAlerts.map((alert) => (
-                <div key={alert.id} className="alerts-list__item">
-                  <div className="alerts-list__meta">
-                    <p className="alerts-list__name">{alert.name}</p>
-                    <p className="alerts-list__query">{alert.query}</p>
-                  </div>
-                  <div className="alerts-list__actions">
+          {customTags.length > 0 ? (
+            <div className="custom-tags-added">
+              <p className="switch-group__title">custom tags added</p>
+              <div className="custom-tags-added__list">
+                {customTags.map((tag) => (
+                  <span key={`custom-tag-${tag}`} className="custom-tags-added__item">
+                    <span>{tag}</span>
                     <button
                       type="button"
-                      className="preset-bar__button"
-                      onClick={() => toggleAlertEnabled(alert.id)}
+                      className="custom-tags-added__remove"
+                      onClick={() => removeCustomTag(tag)}
+                      aria-label={`remove custom tag ${tag}`}
+                      title={`remove ${tag}`}
                     >
-                      {alert.enabled ? "pause" : "resume"}
+                      ×
                     </button>
-                    <button
-                      type="button"
-                      className="preset-bar__button"
-                      onClick={() => deleteAlert(alert.id)}
-                    >
-                      remove
-                    </button>
-                  </div>
-                </div>
-              ))}
+                  </span>
+                ))}
+              </div>
             </div>
           ) : null}
-        </div>
+        </CollapsibleFilterSection>
+
       </section>
 
       <div className="search-shell__actions">

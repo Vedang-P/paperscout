@@ -83,8 +83,10 @@ function applyHardFilters(candidates, query, filters, profile, options = {}) {
     if (citationCount < filters.minCitations) return false;
     if (filters.maxCitations !== null && citationCount > filters.maxCitations) return false;
 
-    if (filters.type === "workshop" && !paper.isWorkshop) return false;
-    if (filters.type === "conference" && paper.isWorkshop) return false;
+    const paperTypes = new Set((paper.paperTypes || []).map((type) => lower(type)));
+    if (filters.type === "workshop" && !paperTypes.has("workshop")) return false;
+    if (filters.type === "conference" && !paperTypes.has("conference")) return false;
+    if (filters.type === "journal" && !paperTypes.has("journal")) return false;
 
     if (filters.venues.length > 0) {
       const conference = String(paper.conference || "").toUpperCase();
@@ -100,8 +102,7 @@ function applyHardFilters(candidates, query, filters, profile, options = {}) {
     }
 
     if (filters.paperTypes.length > 0) {
-      const types = new Set((paper.paperTypes || []).map((type) => lower(type)));
-      const hasType = filters.paperTypes.some((type) => types.has(lower(type)));
+      const hasType = filters.paperTypes.some((type) => paperTypes.has(lower(type)));
       if (!hasType) return false;
     }
 
@@ -190,7 +191,11 @@ function rankCandidates(filteredCandidates, query, filters, model, fallbackIds =
     const paperTypeScore =
       filters.paperTypes.length > 0
         ? paperTypeHitCount / filters.paperTypes.length
-        : mean([paperTypes.has("workshop") ? 1 : 0, paperTypes.has("conference") ? 1 : 0]);
+        : mean([
+            paperTypes.has("workshop") ? 1 : 0,
+            paperTypes.has("conference") ? 1 : 0,
+            paperTypes.has("journal") ? 1 : 0,
+          ]);
 
     const paperTasks = new Set((paper.tasks || []).map((task) => lower(task)));
     const taskHitCount = filters.tasks.filter((task) => paperTasks.has(lower(task))).length;
@@ -352,7 +357,7 @@ function recommendPapers({ query, filters, candidates, sourceStats, model }) {
     }
   }
 
-  if (filters.type === "workshop" && filteredCandidates.length < Math.max(4, Math.floor(filters.limit * 0.35))) {
+  if (filters.type !== "all" && filteredCandidates.length < Math.max(4, Math.floor(filters.limit * 0.35))) {
     const relaxedType = { ...filters, type: "all" };
     const relaxedCandidates = applyHardFilters(candidates, query, relaxedType, profile);
     const merged = mergeById(filteredCandidates, relaxedCandidates);

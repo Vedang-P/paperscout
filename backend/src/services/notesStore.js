@@ -84,7 +84,11 @@ async function writeNotes(userName, notes) {
 }
 
 function sortNotes(notes) {
-  return [...notes].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  return [...notes].sort((a, b) =>
+    String(b.updatedAt || b.createdAt || "").localeCompare(
+      String(a.updatedAt || a.createdAt || "")
+    )
+  );
 }
 
 async function listNotes(userName) {
@@ -108,18 +112,39 @@ async function createNote(payload = {}) {
     throw new Error("paperTitle is required");
   }
 
+  const notes = await readNotes(userName);
   const remark = normalizeWhitespace(payload.remark || "");
+  const paperId = normalizeWhitespace(payload.paperId || "");
+  const paperUrl = normalizeWhitespace(payload.paperUrl || "");
+  const now = nowIso();
+  const titleKey = lower(paperTitle);
+
+  const existingIndex = notes.findIndex((note) => lower(note.paperTitle || "") === titleKey);
+  if (existingIndex >= 0) {
+    const existing = notes[existingIndex];
+    const next = {
+      ...existing,
+      paperTitle,
+      paperId: paperId || existing.paperId || "",
+      paperUrl: paperUrl || existing.paperUrl || "",
+      remark: remark || existing.remark || "",
+      updatedAt: now,
+    };
+    notes[existingIndex] = next;
+    await writeNotes(userName, notes);
+    return next;
+  }
+
   const note = {
     id: crypto.randomUUID(),
     userName,
     paperTitle,
-    paperId: normalizeWhitespace(payload.paperId || ""),
-    paperUrl: normalizeWhitespace(payload.paperUrl || ""),
+    paperId,
+    paperUrl,
     remark,
-    createdAt: nowIso(),
+    createdAt: now,
+    updatedAt: now,
   };
-
-  const notes = await readNotes(userName);
   notes.push(note);
   await writeNotes(userName, notes);
 

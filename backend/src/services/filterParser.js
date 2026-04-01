@@ -17,6 +17,7 @@ function clamp(number, min, max) {
 function normalizeType(value) {
   const type = String(value || "workshop").toLowerCase();
   if (type === "all") return "all";
+  if (type === "journal") return "journal";
   if (type === "conference") return "conference";
   return "workshop";
 }

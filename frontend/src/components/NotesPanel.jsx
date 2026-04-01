@@ -1,16 +1,77 @@
 import { useEffect, useState } from "react";
 import { addNote, deleteNote, fetchNotes } from "../api/papers";
 
-const USER_STORAGE_KEY = "sarveshu-notes-user";
+const LOCAL_NOTES_PREFIX = "sarveshu-notes-local";
 
 function normalizeValue(value) {
   return String(value || "").trim();
 }
 
-export default function NotesPanel() {
-  const [userName, setUserName] = useState(() =>
-    typeof window === "undefined" ? "" : localStorage.getItem(USER_STORAGE_KEY) || ""
+function lower(value) {
+  return normalizeValue(value).toLowerCase();
+}
+
+function sortNotes(notes) {
+  return [...notes].sort((a, b) =>
+    String(b.updatedAt || b.createdAt || "").localeCompare(
+      String(a.updatedAt || a.createdAt || "")
+    )
   );
+}
+
+function localNotesKey(userName) {
+  const normalizedUserName = lower(userName);
+  if (!normalizedUserName) return "";
+  return `${LOCAL_NOTES_PREFIX}:${normalizedUserName}`;
+}
+
+function readLocalNotes(userName) {
+  if (typeof window === "undefined") return [];
+  const key = localNotesKey(userName);
+  if (!key) return [];
+  try {
+    const raw = localStorage.getItem(key);
+    const parsed = JSON.parse(raw || "[]");
+    return Array.isArray(parsed) ? sortNotes(parsed) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalNotes(userName, notes) {
+  if (typeof window === "undefined") return;
+  const key = localNotesKey(userName);
+  if (!key) return;
+  localStorage.setItem(key, JSON.stringify(sortNotes(notes)));
+}
+
+function normalizePaperUrl(value) {
+  const normalized = normalizeValue(value);
+  if (!normalized) return "";
+  try {
+    return new URL(normalized).toString();
+  } catch {
+    try {
+      return new URL(`https://${normalized}`).toString();
+    } catch {
+      return null;
+    }
+  }
+}
+
+function formatDate(value) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+export default function NotesPanel() {
+  const [userName, setUserName] = useState("");
   const [paperTitle, setPaperTitle] = useState("");
   const [paperUrl, setPaperUrl] = useState("");
   const [remark, setRemark] = useState("");
@@ -18,22 +79,34 @@ export default function NotesPanel() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [storageMode, setStorageMode] = useState("server");
 
   const loadNotes = async (targetUserName) => {
     const normalizedUserName = normalizeValue(targetUserName);
     if (!normalizedUserName) {
       setNotes([]);
+      setStorageMode("server");
       return;
     }
 
+    const localNotes = readLocalNotes(normalizedUserName);
     setLoading(true);
     setError(null);
     try {
       const payload = await fetchNotes(normalizedUserName);
-      setNotes(Array.isArray(payload.notes) ? payload.notes : []);
+      const remoteNotes = Array.isArray(payload.notes) ? sortNotes(payload.notes) : [];
+      const nextNotes = remoteNotes.length > 0 ? remoteNotes : localNotes;
+      setNotes(nextNotes);
+      writeLocalNotes(normalizedUserName, nextNotes);
+      setStorageMode(remoteNotes.length > 0 || localNotes.length === 0 ? "server" : "local");
     } catch (err) {
-      setError(err.message || "failed to load notes");
-      setNotes([]);
+      setNotes(localNotes);
+      setStorageMode("local");
+      if (localNotes.length > 0) {
+        setError("backend unavailable. showing local notes from this device.");
+      } else {
+        setError(err.message || "failed to load notes");
+      }
     } finally {
       setLoading(false);
     }
@@ -41,9 +114,6 @@ export default function NotesPanel() {
 
   useEffect(() => {
     const normalized = normalizeValue(userName);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(USER_STORAGE_KEY, normalized);
-    }
     loadNotes(normalized);
   }, [userName]);
 
@@ -51,26 +121,58 @@ export default function NotesPanel() {
     event.preventDefault();
     const normalizedUserName = normalizeValue(userName);
     const normalizedPaperTitle = normalizeValue(paperTitle);
+    const normalizedPaperUrl = normalizePaperUrl(paperUrl);
     if (!normalizedUserName || !normalizedPaperTitle) {
       setError("name and paper title are required");
+      return;
+    }
+    if (normalizeValue(paperUrl) && !normalizedPaperUrl) {
+      setError("paper url must be valid");
       return;
     }
 
     setSaving(true);
     setError(null);
     try {
-      await addNote({
+      const response = await addNote({
         userName: normalizedUserName,
         paperTitle: normalizedPaperTitle,
-        paperUrl: normalizeValue(paperUrl),
+        paperUrl: normalizedPaperUrl,
         remark: normalizeValue(remark),
       });
+      const saved = response?.note || null;
+      if (saved) {
+        const nextNotes = sortNotes([
+          saved,
+          ...notes.filter((item) => item.id !== saved.id),
+        ]);
+        setNotes(nextNotes);
+        writeLocalNotes(normalizedUserName, nextNotes);
+      } else {
+        await loadNotes(normalizedUserName);
+      }
+      setStorageMode("server");
       setPaperTitle("");
       setPaperUrl("");
       setRemark("");
-      await loadNotes(normalizedUserName);
     } catch (err) {
-      setError(err.message || "failed to save note");
+      const fallbackNote = {
+        id: `local-${Date.now()}`,
+        userName: normalizedUserName,
+        paperTitle: normalizedPaperTitle,
+        paperUrl: normalizedPaperUrl || "",
+        remark: normalizeValue(remark),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const nextNotes = sortNotes([fallbackNote, ...notes]);
+      setNotes(nextNotes);
+      writeLocalNotes(normalizedUserName, nextNotes);
+      setStorageMode("local");
+      setPaperTitle("");
+      setPaperUrl("");
+      setRemark("");
+      setError("backend unavailable. note saved locally on this device.");
     } finally {
       setSaving(false);
     }
@@ -83,9 +185,18 @@ export default function NotesPanel() {
     setError(null);
     try {
       await deleteNote(id, normalizedUserName);
-      await loadNotes(normalizedUserName);
+      const nextNotes = notes.filter((note) => note.id !== id);
+      setNotes(nextNotes);
+      writeLocalNotes(normalizedUserName, nextNotes);
+      setStorageMode("server");
     } catch (err) {
-      setError(err.message || "failed to delete note");
+      const nextNotes = notes.filter((note) => note.id !== id);
+      setNotes(nextNotes);
+      writeLocalNotes(normalizedUserName, nextNotes);
+      setStorageMode("local");
+      setError(
+        normalizeValue(err.message) || "backend unavailable. note deleted locally on this device."
+      );
     }
   };
 
@@ -104,7 +215,7 @@ export default function NotesPanel() {
             type="text"
             value={userName}
             onChange={(event) => setUserName(event.target.value)}
-            placeholder="your name"
+            required
           />
         </label>
 
@@ -115,7 +226,7 @@ export default function NotesPanel() {
             type="text"
             value={paperTitle}
             onChange={(event) => setPaperTitle(event.target.value)}
-            placeholder="paper title"
+            required
           />
         </label>
 
@@ -126,7 +237,6 @@ export default function NotesPanel() {
             type="url"
             value={paperUrl}
             onChange={(event) => setPaperUrl(event.target.value)}
-            placeholder="https://..."
           />
         </label>
 
@@ -136,17 +246,23 @@ export default function NotesPanel() {
             className="notes-form__textarea"
             value={remark}
             onChange={(event) => setRemark(event.target.value)}
-            placeholder="why is this paper interesting?"
             rows={3}
           />
         </label>
 
-        <button className="notes-form__button" type="submit" disabled={saving}>
+        <button
+          className="notes-form__button"
+          type="submit"
+          disabled={saving || !normalizeValue(userName) || !normalizeValue(paperTitle)}
+        >
           {saving ? "saving..." : "save note"}
         </button>
       </form>
 
       {error ? <p className="panel__error">{error}</p> : null}
+      <p className="panel__muted panel__muted--tiny">
+        storage: {storageMode === "server" ? "server synced" : "local device fallback"}
+      </p>
 
       <div className="notes-list">
         {loading ? <p className="panel__muted">loading notes...</p> : null}
@@ -157,6 +273,9 @@ export default function NotesPanel() {
         {notes.map((note) => (
           <article key={note.id} className="note-card">
             <p className="note-card__title">{note.paperTitle}</p>
+            <p className="note-card__meta">
+              {note.userName || "unknown"} · {formatDate(note.updatedAt || note.createdAt)}
+            </p>
             {note.remark ? <p className="note-card__remark">{note.remark}</p> : null}
             <div className="note-card__actions">
               {note.paperUrl ? (

@@ -170,7 +170,12 @@ function extractIclrConferenceSubmission({ html, timezone }) {
 
 function extractCvfSubmissionAoE({ html, timezone }) {
   const text = htmlToText(html);
-  const match = text.match(/Paper Submission Deadline\*?:\s*([A-Za-z]{3,9}\s+\d{1,2},\s*\d{4})\s*AOE/i);
+  let match = text.match(/Paper Submission Deadline\*?:\s*([A-Za-z]{3,9}\s+\d{1,2},\s*\d{4})\s*AOE/i);
+  if (!match) {
+    match = text.match(
+      /Paper Submission Deadline\*?:[\s\S]{0,500}?([A-Za-z]{3,9}\s+\d{1,2},\s*\d{4})\s*AOE/i
+    );
+  }
   if (!match) return null;
 
   return parseMonthDayYearDate(normalizeWhitespace(match[1]), timezone, "23:59:59");
@@ -273,6 +278,9 @@ function sortEvents(a, b) {
   if (a.isOpen && b.isOpen && a.daysRemaining !== b.daysRemaining) {
     return a.daysRemaining - b.daysRemaining;
   }
+  if (!a.isOpen && !b.isOpen && a.daysRemaining !== b.daysRemaining) {
+    return b.daysRemaining - a.daysRemaining;
+  }
   return a.title.localeCompare(b.title);
 }
 
@@ -316,19 +324,34 @@ async function getActiveDeadlines({ limit = 12, includeClosed = false, eventType
   const now = new Date();
   const eventTypes = parseEventTypes(eventType);
   const verified = await loadVerifiedDeadlines();
+  const scoped = verified.filter((item) => eventTypes.includes(item.eventType)).sort(sortEvents);
+  const openDeadlines = scoped.filter((item) => item.isOpen);
+  const closedDeadlines = scoped.filter((item) => !item.isOpen);
 
-  const deadlines = verified
-    .filter((item) => eventTypes.includes(item.eventType))
-    .filter((item) => includeClosed || item.isOpen)
-    .sort(sortEvents)
-    .slice(0, Math.max(1, Math.min(Number(limit) || 12, 40)));
+  let fallbackMode = "none";
+  let selected = includeClosed ? scoped : openDeadlines;
+  if (!includeClosed && selected.length === 0 && closedDeadlines.length > 0) {
+    fallbackMode = "closed_only";
+    selected = closedDeadlines;
+  }
+
+  const deadlines = selected.slice(0, Math.max(1, Math.min(Number(limit) || 12, 40)));
 
   return {
     updatedAt: now.toISOString(),
     total: deadlines.length,
+    openTotal: openDeadlines.length,
+    verifiedTotal: scoped.length,
     filters: {
       eventType: eventTypes,
       includeClosed: Boolean(includeClosed),
+    },
+    fallback: {
+      mode: fallbackMode,
+      reason:
+        fallbackMode === "closed_only"
+          ? "no_open_verified_deadlines"
+          : null,
     },
     deadlines,
   };
