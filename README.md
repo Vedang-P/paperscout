@@ -1,238 +1,264 @@
-# PaperScout
+# Sarveshu
 
-PaperScout is a research paper scraper and discovery platform for **workshop-heavy NLP + CV search**.
+Sarveshu is a research paper discovery engine focused on NLP and CV.
 
-It aggregates real data from multiple sources (no mock mode), then runs a **hybrid recommendation model** over the candidates.
+This README explains the **actual system logic** step-by-step, from user input to ranked output.
 
-## Highlights
+## Core Goal
 
-- Multi-source retrieval (OpenAlex + DBLP + CVF workshop scraping)
-- Workshop-focused search for venues like ICLR / ECCV / ACCV
-- Filters: year, citations, paper type, venue, tags
-- Year floor enforced at **2021**
-- Hybrid recommendation ranker with semantic similarity, lexical overlap, citation quality/velocity, venue priors, personalization, and MMR diversity reranking
-- Paper actions in UI: open source page, open pdf, open in app (embedded view with fallback)
+Given a query and filters, Sarveshu should:
 
-## Current Data Sources
+1. Fetch papers from multiple sources.
+2. Normalize everything into one common schema.
+3. Enrich missing metadata (especially citations and tags).
+4. Rank candidates with a hybrid model.
+5. Return diverse, explainable recommendations.
 
-- **OpenAlex API**
-  broad scholarly coverage with citation metadata
-- **DBLP API**
-  venue/conference/workshop discovery
-- **CVF Open Access scraper**
-  ACCV workshop menus and paper pages
+## End-to-End Pipeline
 
-## Venue Focus
+### Step 1: Input Parsing and Safety Clamping
 
-- Primary: `ICLR`, `ECCV`, `ACCV`
-- Also supported in filters: `ICCV`, `CVPR`, `ACL`, `EMNLP`, `NAACL`
+Entry points:
 
-## 60-Second Local Setup
+- Local Express routes: [backend/src/routes/papers.js](/Users/vedang/paperscout/backend/src/routes/papers.js)
+- Vercel serverless routes: [api/papers/recommend.js](/Users/vedang/paperscout/api/papers/recommend.js), [api/papers/search.js](/Users/vedang/paperscout/api/papers/search.js)
 
-1. Backend
+Filter parsing lives in [backend/src/services/filterParser.js](/Users/vedang/paperscout/backend/src/services/filterParser.js).
+
+What happens here:
+
+1. Parse raw query params.
+2. Clamp years so `minYear >= 2021` and `maxYear <= current year`.
+3. Clamp `limit` to `[1, 100]`.
+4. Normalize list filters (`venues`, `tags`, `paperTypes`, `tasks`, `datasets`) into lowercase/unique arrays.
+5. Parse `hasCode` into `true | false | null`.
+6. Parse model controls (`diversity`, preferred/excluded authors, seed titles, keywords).
+
+Why this step matters:
+
+- Prevents invalid requests from breaking later stages.
+- Enforces project policy (no pre-2021 papers).
+- Gives every downstream module a clean, typed filter object.
+
+### Step 2: Query Construction
+
+Query builder: [backend/src/services/paperSearch.js](/Users/vedang/paperscout/backend/src/services/paperSearch.js)
+
+If user query `q` is empty, system composes a fallback query from:
+
+- tags
+- tasks
+- datasets
+- paperTypes
+- model keywords/seed titles/preferred authors
+
+This prevents dead requests and still allows recommendation by intent filters.
+
+### Step 3: Parallel Source Retrieval
+
+Candidate gathering: [backend/src/services/candidateAggregator.js](/Users/vedang/paperscout/backend/src/services/candidateAggregator.js)
+
+Adapters:
+
+- OpenAlex: [backend/src/adapters/openAlexAdapter.js](/Users/vedang/paperscout/backend/src/adapters/openAlexAdapter.js)
+- DBLP: [backend/src/adapters/dblpAdapter.js](/Users/vedang/paperscout/backend/src/adapters/dblpAdapter.js)
+- CVF workshop scraper: [backend/src/adapters/cvfWorkshopAdapter.js](/Users/vedang/paperscout/backend/src/adapters/cvfWorkshopAdapter.js)
+
+Behavior:
+
+1. Sources are queried in parallel.
+2. Each adapter maps raw provider fields into the shared paper shape.
+3. Adapter failures are isolated (`catch -> []`) so one broken source does not collapse the whole response.
+
+### Step 4: Normalization, Typing, and Metadata Enrichment
+
+Classifier: [backend/src/services/paperClassifier.js](/Users/vedang/paperscout/backend/src/services/paperClassifier.js)
+
+For every raw paper:
+
+1. Normalize text fields (`title`, `abstract`).
+2. Build unified `links` array from URL/PDF/provider links.
+3. Detect code links (`github.com` / `gitlab.com`) and set:
+   - `hasCode`
+   - `codeUrl`
+4. Infer paper types (`workshop`, `conference`, `journal`, `preprint`, `survey`, `demo`, `dataset`, `benchmark`) from venue/title/source patterns.
+5. Infer task labels and dataset labels by keyword pattern matching.
+
+Tag inference from NLP/CV keywords is done via [backend/src/services/tagger.js](/Users/vedang/paperscout/backend/src/services/tagger.js), then merged into each paper.
+
+### Step 5: Deduplication and Merge
+
+Dedup logic: [backend/src/services/candidateAggregator.js](/Users/vedang/paperscout/backend/src/services/candidateAggregator.js)
+
+Fingerprints are built from:
+
+- DOI
+- PDF URL
+- URL
+- normalized title key
+
+When duplicates are found:
+
+1. Keep best text fields (prefer richer abstract/title).
+2. Merge authors and links uniquely.
+3. Preserve strongest source signal.
+4. Keep max citation count observed.
+
+Result: one canonical record per paper instead of multiple provider copies.
+
+### Step 6: Citation Enrichment
+
+Citation enrichment: [backend/src/services/citationEnricher.js](/Users/vedang/paperscout/backend/src/services/citationEnricher.js)
+
+If citation data is missing/low quality, the system enriches via OpenAlex lookups (cached) for a subset of candidates.
+
+This reduces ranking noise from missing citation metadata.
+
+### Step 7: Hard Filtering
+
+Hard filter phase in [backend/src/services/recommendationModel.js](/Users/vedang/paperscout/backend/src/services/recommendationModel.js) (`applyHardFilters`).
+
+Rules include:
+
+- year bounds
+- citation bounds
+- `type` (`workshop | conference | all`)
+- venue whitelist
+- tag matching
+- paper type matching
+- task matching
+- dataset matching
+- `hasCode` matching
+- excluded tags
+- disliked authors
+
+Only papers passing all hard constraints move to scoring.
+
+### Step 8: Hybrid Feature Scoring
+
+Scoring happens in `rankCandidates` within [backend/src/services/recommendationModel.js](/Users/vedang/paperscout/backend/src/services/recommendationModel.js).
+
+Feature families used:
+
+1. Semantic relevance (TF-IDF cosine similarity)
+2. Lexical overlap (token coverage)
+3. Citation strength (`log1p(citations)` normalized)
+4. Citation velocity (citations per age)
+5. Recency score
+6. Tag match score
+7. Paper type score
+8. Task score
+9. Dataset score
+10. Venue prior and preference boost
+11. Preferred-author boost
+12. Workshop preference signal
+13. Code availability score
+14. Metadata completeness score
+15. Source reliability prior
+
+All features are weighted into a final ranking score.
+
+### Step 9: Fallback Relaxation Strategy
+
+If strict filters produce zero/low results, system applies staged relaxations (recorded in `meta.fallback.steps`):
+
+1. Relax tag matching mode (`all -> any`)
+2. Relax workshop-only constraint to `all` when too sparse
+3. Relax code filter
+4. Relax paper types
+5. Relax tasks
+6. Relax datasets
+7. Relax tags entirely
+8. Widen venues
+9. Relax citation threshold
+10. Final global relaxation (`all_strict_filters_relaxed`) if still empty
+
+Goal: avoid empty response when there are relevant papers available.
+
+### Step 10: Diversity Re-Ranking (MMR)
+
+After score sort, Maximal Marginal Relevance reranking runs (`rerankWithMMR`) to avoid near-duplicate results.
+
+- Uses cosine similarity between paper vectors.
+- Controlled by `diversity` parameter.
+
+### Step 11: Explainable Output Assembly
+
+Final output includes:
+
+- ranked papers
+- per-paper recommendation score
+- per-paper reason chips (for example: semantic relevance, citation profile, venue, linked implementation)
+- meta diagnostics:
+  - `totalBeforeFilter`
+  - `totalAfterFilter`
+  - `sourceStats`
+  - `fallback.steps`
+  - `availableFilters`
+
+This enables transparent debugging and better UI explanations.
+
+## Auxiliary Subsystems
+
+### Deadlines Engine
+
+Files:
+
+- [backend/src/services/deadlinesService.js](/Users/vedang/paperscout/backend/src/services/deadlinesService.js)
+- [backend/src/routes/deadlines.js](/Users/vedang/paperscout/backend/src/routes/deadlines.js)
+- [api/deadlines.js](/Users/vedang/paperscout/api/deadlines.js)
+
+Logic:
+
+1. Pull conference/workshop feed.
+2. Normalize timezone/deadline parsing.
+3. Compute `daysRemaining` and `isOpen`.
+4. Rank: open first, then nearest deadline first.
+5. If feed is stale, inject estimated upcoming major deadlines (explicitly marked `isEstimated`).
+
+### Notes Store
+
+Files:
+
+- [backend/src/services/notesStore.js](/Users/vedang/paperscout/backend/src/services/notesStore.js)
+- [backend/src/routes/notes.js](/Users/vedang/paperscout/backend/src/routes/notes.js)
+- [api/notes.js](/Users/vedang/paperscout/api/notes.js)
+
+Logic:
+
+1. `GET /api/notes?userName=...` -> list notes.
+2. `POST /api/notes` -> create note with UUID and timestamp.
+3. `DELETE /api/notes` -> remove by ID.
+4. Storage backend:
+   - Vercel KV (if `KV_REST_API_URL` + `KV_REST_API_TOKEN` are set)
+   - in-memory fallback otherwise
+
+## Quick Local Run
 
 ```bash
+# terminal 1
 cd backend
 npm install
 npm run dev
-```
 
-Backend runs at `http://localhost:5000`.
-
-2. Frontend (new terminal)
-
-```bash
+# terminal 2
 cd frontend
 npm install
 npm run dev
 ```
 
-Frontend runs at `http://localhost:5173`.
-
-`frontend/vite.config.js` proxies `/api/*` to backend.
-
-## API
-
-### Health
-
-`GET /api/papers/health`
-
-```json
-{ "status": "ok" }
-```
-
-### Search
-
-`GET /api/papers/search`
-
-Required:
-- `q`: query text
-
-Optional:
-- `minYear` (default `2021`, clamped to `>= 2021`)
-- `maxYear` (default current year)
-- `minCitations` (default `0`)
-- `maxCitations`
-- `type`: `workshop | conference | all` (default `workshop`)
-- `venues`: comma-separated list, e.g. `ICLR,ECCV,ACCV`
-- `tags`: comma-separated list, e.g. `cv,multimodal`
-- `limit` (default `40`, max `100`)
-
-Example request:
-
-```bash
-curl "http://localhost:5000/api/papers/search?q=vision%20language%20model&minYear=2021&minCitations=10&type=workshop&venues=ICLR,ECCV,ACCV&tags=cv,multimodal&limit=20"
-```
-
-Example response shape:
-
-```json
-{
-  "query": "vision language model",
-  "filters": {
-    "minYear": 2021,
-    "maxYear": 2026,
-    "minCitations": 10,
-    "maxCitations": null,
-    "type": "workshop",
-    "venues": ["ICLR", "ECCV", "ACCV"],
-    "tags": ["cv", "multimodal"],
-    "limit": 20
-  },
-  "total": 12,
-  "results": [
-    {
-      "id": "openalex:...",
-      "title": "Paper title",
-      "authors": ["A", "B"],
-      "year": 2024,
-      "venue": "ACCV Workshop: ...",
-      "conference": "ACCV",
-      "isWorkshop": true,
-      "citationCount": 24,
-      "url": "https://...",
-      "pdfUrl": "https://...",
-      "tags": ["cv", "multimodal"]
-    }
-  ],
-  "meta": {
-    "totalBeforeFilter": 120,
-    "totalAfterFilter": 12,
-    "dataSources": ["OpenAlex", "DBLP", "CVF Open Access"],
-    "suggestedTags": ["nlp", "cv", "multimodal"],
-    "normalizedQuery": "vision language model"
-  }
-}
-```
-
-### Recommend
-
-`GET /api/papers/recommend`
-
-Required:
-- one of `q` or `tags`
-
-Optional model controls:
-- `preferredAuthors` (comma-separated)
-- `excludeAuthors` (comma-separated)
-- `excludeTags` (comma-separated)
-- `seedTitles` (comma-separated)
-- `keywords` (comma-separated)
-- `diversity` (`0` to `1`, default `0.25`)
-
-Example request:
-
-```bash
-curl "http://localhost:5000/api/papers/recommend?q=vision%20language%20model&minYear=2021&type=workshop&venues=ICLR,ECCV,ACCV&tags=cv,multimodal&preferredAuthors=keiji%20yanai&diversity=0.35&limit=20"
-```
-
-## Architecture (Current)
-
-Recommendation pipeline:
-
-1. Parse query + filters
-2. Gather candidates from adapters in parallel
-3. Normalize and deduplicate records (DOI/url/pdf/title fingerprints)
-4. Enrich missing citation counts (OpenAlex, cached)
-5. Infer tags from title/abstract/venue
-6. Apply hard filters and profile constraints
-7. Compute hybrid ranking features
-8. Apply diversity reranking with MMR
-9. Return ranked recommendations with feature explanations
-
-Key backend files:
-
-- `backend/src/adapters/openAlexAdapter.js`
-- `backend/src/adapters/dblpAdapter.js`
-- `backend/src/adapters/cvfWorkshopAdapter.js`
-- `backend/src/services/candidateAggregator.js`
-- `backend/src/services/paperSearch.js`
-- `backend/src/services/recommendationModel.js`
-- `backend/src/services/vectorSpace.js`
-- `backend/src/services/citationEnricher.js`
-- `backend/src/services/filterParser.js`
-- `backend/src/services/tagger.js`
-
-## Repository Layout
+## Repository Structure
 
 ```text
 paperscout/
-├─ frontend/                    # React + Vite client
-├─ backend/                     # Express API for local dev
-├─ api/papers/                  # Vercel serverless functions
-└─ vercel.json                  # Vercel project config
+├─ frontend/                    # React client
+├─ backend/                     # Express API (local runtime)
+├─ api/                         # Vercel serverless functions
+└─ vercel.json                  # Vercel build/runtime config
 ```
 
-## Deploy to Vercel
+## Maintainer
 
-### Dashboard
+Made by Vedang.
 
-1. Push repository to GitHub/GitLab/Bitbucket.
-2. Import into Vercel.
-3. Keep project root at repository root.
-4. Deploy.
-
-`vercel.json` handles:
-- install command for backend + frontend
-- frontend build command
-- static output directory
-
-### CLI
-
-```bash
-npm i -g vercel
-cd /path/to/paperscout
-vercel
-vercel --prod
-```
-
-## Backend Roadmap (Production)
-
-1. Add missing venue adapters
-`openReviewAdapter` for ICLR workshops, `ecvaAdapter` for ECCV workshops, and optional ACL Anthology support.
-
-2. Add persistence and async scraping
-Use Postgres as canonical store, Redis/BullMQ for refresh jobs, and serve cached results on request path.
-
-3. Improve resilience
-Add adapter retry/backoff, rate-limit-aware throttling, and per-source circuit breakers.
-
-4. Improve ranking and relevance
-Add stronger BM25/embedding rerank, venue/workshop priors, and feedback-based tuning.
-
-5. Add observability and tests
-Add adapter metrics (`latency`, `error_rate`, `yield`), parser snapshot tests, and API contract tests.
-
-## Environment Variables
-
-Optional:
-- `CVF_MAX_WORKSHOP_PAGES` (default `10`) controls ACCV workshop scraping breadth per query.
-
-Future:
-- source API keys for higher quota and richer metadata.
-
-## Known Limitations
-
-- Source coverage is currently strongest for ACCV workshop scraping.
-- Some external pages block iframe embedding; `open in app` falls back to external links.
-- First search can be slower because live scraping/enrichment runs on request path.
+Repository: [https://github.com/Vedang-P/paperscout](https://github.com/Vedang-P/paperscout)

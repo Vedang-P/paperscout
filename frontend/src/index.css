@@ -74,6 +74,49 @@ textarea {
   align-self: start;
 }
 
+.app-credit {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.app-credit__text {
+  color: var(--muted);
+}
+
+.app-credit__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink);
+  border-bottom: 1px solid transparent;
+}
+
+.app-credit__link:hover {
+  border-bottom-color: var(--ink);
+}
+
+.app-credit__icon {
+  width: 11px;
+  height: 11px;
+  display: inline-flex;
+}
+
+.app-credit__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
 .panel {
   background: var(--panel);
   border: 1px solid var(--line);
