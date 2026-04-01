@@ -79,13 +79,11 @@ export default function NotesPanel() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [storageMode, setStorageMode] = useState("server");
 
   const loadNotes = async (targetUserName) => {
     const normalizedUserName = normalizeValue(targetUserName);
     if (!normalizedUserName) {
       setNotes([]);
-      setStorageMode("server");
       return;
     }
 
@@ -98,10 +96,8 @@ export default function NotesPanel() {
       const nextNotes = remoteNotes.length > 0 ? remoteNotes : localNotes;
       setNotes(nextNotes);
       writeLocalNotes(normalizedUserName, nextNotes);
-      setStorageMode(remoteNotes.length > 0 || localNotes.length === 0 ? "server" : "local");
     } catch (err) {
       setNotes(localNotes);
-      setStorageMode("local");
       if (localNotes.length > 0) {
         setError("backend unavailable. showing local notes from this device.");
       } else {
@@ -151,7 +147,6 @@ export default function NotesPanel() {
       } else {
         await loadNotes(normalizedUserName);
       }
-      setStorageMode("server");
       setPaperTitle("");
       setPaperUrl("");
       setRemark("");
@@ -168,7 +163,6 @@ export default function NotesPanel() {
       const nextNotes = sortNotes([fallbackNote, ...notes]);
       setNotes(nextNotes);
       writeLocalNotes(normalizedUserName, nextNotes);
-      setStorageMode("local");
       setPaperTitle("");
       setPaperUrl("");
       setRemark("");
@@ -188,12 +182,10 @@ export default function NotesPanel() {
       const nextNotes = notes.filter((note) => note.id !== id);
       setNotes(nextNotes);
       writeLocalNotes(normalizedUserName, nextNotes);
-      setStorageMode("server");
     } catch (err) {
       const nextNotes = notes.filter((note) => note.id !== id);
       setNotes(nextNotes);
       writeLocalNotes(normalizedUserName, nextNotes);
-      setStorageMode("local");
       setError(
         normalizeValue(err.message) || "backend unavailable. note deleted locally on this device."
       );
@@ -260,10 +252,6 @@ export default function NotesPanel() {
       </form>
 
       {error ? <p className="panel__error">{error}</p> : null}
-      <p className="panel__muted panel__muted--tiny">
-        storage: {storageMode === "server" ? "server synced" : "local device fallback"}
-      </p>
-
       <div className="notes-list">
         {loading ? <p className="panel__muted">loading notes...</p> : null}
         {!loading && notes.length === 0 ? (
