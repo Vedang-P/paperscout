@@ -6,6 +6,7 @@ const {
   DEFAULT_MIN_YEAR,
   DEFAULT_VENUES,
   MAX_LIMIT,
+  SUPPORTED_PAPER_TYPES,
 } = require("../config/searchConfig");
 const { parseCsvParam, parseNumber, parseYear, toUniqueList } = require("../utils/text");
 
@@ -44,6 +45,21 @@ function parseSearchFilters(queryParams = {}) {
 
   const venues = toUniqueList(parseCsvParam(queryParams.venues)).map((v) => v.toUpperCase());
   const tags = toUniqueList(parseCsvParam(queryParams.tags)).map((tag) => tag.toLowerCase());
+  const paperTypesRaw = toUniqueList(parseCsvParam(queryParams.paperTypes)).map((value) =>
+    String(value).toLowerCase()
+  );
+  const paperTypes = paperTypesRaw.filter((value) => SUPPORTED_PAPER_TYPES.includes(value));
+  const tasks = toUniqueList(parseCsvParam(queryParams.tasks)).map((value) =>
+    String(value).toLowerCase()
+  );
+  const datasets = toUniqueList(parseCsvParam(queryParams.datasets)).map((value) =>
+    String(value).toLowerCase()
+  );
+
+  let hasCode = null;
+  const hasCodeRaw = String(queryParams.hasCode ?? "").toLowerCase().trim();
+  if (hasCodeRaw === "true" || hasCodeRaw === "1" || hasCodeRaw === "yes") hasCode = true;
+  if (hasCodeRaw === "false" || hasCodeRaw === "0" || hasCodeRaw === "no") hasCode = false;
 
   return {
     minYear,
@@ -53,6 +69,10 @@ function parseSearchFilters(queryParams = {}) {
     type: normalizeType(queryParams.type),
     venues: venues.length > 0 ? venues : DEFAULT_VENUES,
     tags,
+    paperTypes,
+    tasks,
+    datasets,
+    hasCode,
     limit,
   };
 }

@@ -1,4 +1,11 @@
-const { CURRENT_YEAR, SUGGESTED_TAGS, SUPPORTED_VENUES } = require("../config/searchConfig");
+const {
+  CURRENT_YEAR,
+  SUGGESTED_TAGS,
+  SUPPORTED_VENUES,
+  SUPPORTED_PAPER_TYPES,
+  SUGGESTED_TASKS,
+  SUGGESTED_DATASETS,
+} = require("../config/searchConfig");
 const { buildIdfMaps, buildTfIdfVector, cosineSimilarity, tokenCoverageScore } = require("./vectorSpace");
 const { lower, normalizeWhitespace, parseCsvParam, tokenize } = require("../utils/text");
 
@@ -92,6 +99,29 @@ function applyHardFilters(candidates, query, filters, profile, options = {}) {
       if (!matches) return false;
     }
 
+    if (filters.paperTypes.length > 0) {
+      const types = new Set((paper.paperTypes || []).map((type) => lower(type)));
+      const hasType = filters.paperTypes.some((type) => types.has(lower(type)));
+      if (!hasType) return false;
+    }
+
+    if (filters.tasks.length > 0) {
+      const paperTasks = new Set((paper.tasks || []).map((task) => lower(task)));
+      const hasTask = filters.tasks.some((task) => paperTasks.has(lower(task)));
+      if (!hasTask) return false;
+    }
+
+    if (filters.datasets.length > 0) {
+      const paperDatasets = new Set((paper.datasets || []).map((dataset) => lower(dataset)));
+      const hasDataset = filters.datasets.some((dataset) =>
+        paperDatasets.has(lower(dataset))
+      );
+      if (!hasDataset) return false;
+    }
+
+    if (filters.hasCode === true && !paper.hasCode) return false;
+    if (filters.hasCode === false && paper.hasCode) return false;
+
     if (profile.excludeTags.length > 0) {
       const tagSet = new Set((paper.tags || []).map((tag) => lower(tag)));
       for (const tag of profile.excludeTags) {
@@ -104,12 +134,6 @@ function applyHardFilters(candidates, query, filters, profile, options = {}) {
       if (profile.dislikedAuthors.some((author) => authorText.includes(author))) {
         return false;
       }
-    }
-
-    const queryTokens = tokenize(query);
-    if (queryTokens.length > 0) {
-      const overlap = tokenCoverageScore(makePaperText(paper), queryTokens);
-      if (overlap <= 0) return false;
     }
 
     return true;
@@ -161,6 +185,24 @@ function rankCandidates(filteredCandidates, query, filters, model, fallbackIds =
       paperTags.has("multimodal") ? 1 : 0,
     ]);
 
+    const paperTypes = new Set((paper.paperTypes || []).map((type) => lower(type)));
+    const paperTypeHitCount = filters.paperTypes.filter((type) => paperTypes.has(lower(type))).length;
+    const paperTypeScore =
+      filters.paperTypes.length > 0
+        ? paperTypeHitCount / filters.paperTypes.length
+        : mean([paperTypes.has("workshop") ? 1 : 0, paperTypes.has("conference") ? 1 : 0]);
+
+    const paperTasks = new Set((paper.tasks || []).map((task) => lower(task)));
+    const taskHitCount = filters.tasks.filter((task) => paperTasks.has(lower(task))).length;
+    const taskScore = filters.tasks.length > 0 ? taskHitCount / filters.tasks.length : 0;
+
+    const paperDatasets = new Set((paper.datasets || []).map((dataset) => lower(dataset)));
+    const datasetHitCount = filters.datasets.filter((dataset) =>
+      paperDatasets.has(lower(dataset))
+    ).length;
+    const datasetScore =
+      filters.datasets.length > 0 ? datasetHitCount / filters.datasets.length : 0;
+
     const conference = String(paper.conference || "").toUpperCase();
     const venueBase = VENUE_PRIOR[conference] || 0.55;
     const venuePreferenceBoost = filters.venues.includes(conference) ? 0.12 : 0;
@@ -174,6 +216,7 @@ function rankCandidates(filteredCandidates, query, filters, model, fallbackIds =
         : 0;
 
     const workshopScore = paper.isWorkshop ? 1 : 0.1;
+    const codeScore = paper.hasCode ? 1 : 0;
     const metadataScore = mean([
       paper.abstract ? 1 : 0.15,
       paper.pdfUrl ? 1 : 0.25,
@@ -190,9 +233,13 @@ function rankCandidates(filteredCandidates, query, filters, model, fallbackIds =
       citationVelocity * 0.08 +
       recencyScore * 0.07 +
       tagScore * 0.1 +
+      paperTypeScore * 0.03 +
+      taskScore * 0.03 +
+      datasetScore * 0.03 +
       venueScore * 0.07 +
       authorMatchScore * 0.05 +
       workshopScore * 0.03 +
+      codeScore * 0.06 +
       metadataScore * 0.03 +
       sourceScore * 0.02 -
       fallbackPenalty;
@@ -208,9 +255,13 @@ function rankCandidates(filteredCandidates, query, filters, model, fallbackIds =
         citationVelocity,
         recencyScore,
         tagScore,
+        paperTypeScore,
+        taskScore,
+        datasetScore,
         venueScore,
         authorMatchScore,
         workshopScore,
+        codeScore,
       },
     };
   });
@@ -254,8 +305,12 @@ function makeReasoningSummary(features) {
   if (features.citationScore > 0.5) reasons.push("strong citation profile");
   if (features.citationVelocity > 0.4) reasons.push("high citation velocity");
   if (features.tagScore > 0.4) reasons.push("good tag alignment");
+  if (features.paperTypeScore > 0.6) reasons.push("paper type alignment");
+  if (features.taskScore > 0.6) reasons.push("task-level match");
+  if (features.datasetScore > 0.6) reasons.push("dataset-level match");
   if (features.venueScore > 0.75) reasons.push("high-priority venue");
   if (features.workshopScore > 0.9) reasons.push("workshop match");
+  if (features.codeScore > 0.9) reasons.push("linked public implementation");
   if (reasons.length === 0) reasons.push("balanced relevance across ranking signals");
   return reasons.slice(0, 3);
 }
@@ -268,6 +323,13 @@ function mergeById(basePapers, newPapers) {
     }
   }
   return Array.from(map.values());
+}
+
+function markNewFallbackIds(existing, merged, fallbackIds) {
+  const existingIds = new Set(existing.map((paper) => paper.id));
+  for (const paper of merged) {
+    if (!existingIds.has(paper.id)) fallbackIds.add(paper.id);
+  }
 }
 
 function recommendPapers({ query, filters, candidates, sourceStats, model }) {
@@ -294,14 +356,50 @@ function recommendPapers({ query, filters, candidates, sourceStats, model }) {
     const relaxedType = { ...filters, type: "all" };
     const relaxedCandidates = applyHardFilters(candidates, query, relaxedType, profile);
     const merged = mergeById(filteredCandidates, relaxedCandidates);
-    for (const paper of merged) {
-      if (!filteredCandidates.find((existing) => existing.id === paper.id)) {
-        fallbackIds.add(paper.id);
-      }
-    }
+    markNewFallbackIds(filteredCandidates, merged, fallbackIds);
     if (merged.length > filteredCandidates.length) {
       fallbackSteps.push("type_relaxed_to_all");
       filteredCandidates = merged;
+    }
+  }
+
+  if (filteredCandidates.length === 0 && filters.hasCode === true) {
+    const relaxedCode = { ...filters, hasCode: null };
+    const relaxedCandidates = applyHardFilters(candidates, query, relaxedCode, profile);
+    if (relaxedCandidates.length > 0) {
+      filteredCandidates = relaxedCandidates;
+      fallbackSteps.push("code_filter_relaxed");
+      for (const paper of filteredCandidates) fallbackIds.add(paper.id);
+    }
+  }
+
+  if (filteredCandidates.length === 0 && filters.paperTypes.length > 0) {
+    const relaxedPaperTypes = { ...filters, paperTypes: [] };
+    const relaxedCandidates = applyHardFilters(candidates, query, relaxedPaperTypes, profile);
+    if (relaxedCandidates.length > 0) {
+      filteredCandidates = relaxedCandidates;
+      fallbackSteps.push("paper_types_relaxed");
+      for (const paper of filteredCandidates) fallbackIds.add(paper.id);
+    }
+  }
+
+  if (filteredCandidates.length === 0 && filters.tasks.length > 0) {
+    const relaxedTasks = { ...filters, tasks: [] };
+    const relaxedCandidates = applyHardFilters(candidates, query, relaxedTasks, profile);
+    if (relaxedCandidates.length > 0) {
+      filteredCandidates = relaxedCandidates;
+      fallbackSteps.push("tasks_relaxed");
+      for (const paper of filteredCandidates) fallbackIds.add(paper.id);
+    }
+  }
+
+  if (filteredCandidates.length === 0 && filters.datasets.length > 0) {
+    const relaxedDatasets = { ...filters, datasets: [] };
+    const relaxedCandidates = applyHardFilters(candidates, query, relaxedDatasets, profile);
+    if (relaxedCandidates.length > 0) {
+      filteredCandidates = relaxedCandidates;
+      fallbackSteps.push("datasets_relaxed");
+      for (const paper of filteredCandidates) fallbackIds.add(paper.id);
     }
   }
 
@@ -341,6 +439,27 @@ function recommendPapers({ query, filters, candidates, sourceStats, model }) {
     }
   }
 
+  if (filteredCandidates.length === 0 && candidates.length > 0) {
+    const fullyRelaxed = {
+      ...filters,
+      minCitations: 0,
+      maxCitations: null,
+      type: "all",
+      venues: SUPPORTED_VENUES,
+      tags: [],
+      paperTypes: [],
+      tasks: [],
+      datasets: [],
+      hasCode: null,
+    };
+    const relaxedCandidates = applyHardFilters(candidates, query, fullyRelaxed, profile);
+    if (relaxedCandidates.length > 0) {
+      filteredCandidates = relaxedCandidates;
+      fallbackSteps.push("all_strict_filters_relaxed");
+      for (const paper of filteredCandidates) fallbackIds.add(paper.id);
+    }
+  }
+
   const ranked = rankCandidates(filteredCandidates, query, filters, model, fallbackIds);
   const reranked = rerankWithMMR(ranked, filters.limit, model.diversity);
 
@@ -365,13 +484,18 @@ function recommendPapers({ query, filters, candidates, sourceStats, model }) {
       dataSources: Object.values(SOURCE_NAME),
       sourceStats,
       model: {
-        name: "paperscout-hybrid-ranker-v2",
+        name: "sarveshu-hybrid-ranker-v3",
         diversity: model.diversity,
       },
       fallback: {
         workshopFallbackUsed: fallbackIds.size > 0,
         fallbackCount: fallbackIds.size,
         steps: fallbackSteps,
+      },
+      availableFilters: {
+        paperTypes: SUPPORTED_PAPER_TYPES,
+        tasks: SUGGESTED_TASKS,
+        datasets: SUGGESTED_DATASETS,
       },
       suggestedTags: SUGGESTED_TAGS,
     },

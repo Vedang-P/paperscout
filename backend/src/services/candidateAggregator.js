@@ -2,6 +2,7 @@ const { searchCvfWorkshops } = require("../adapters/cvfWorkshopAdapter");
 const { searchDblp } = require("../adapters/dblpAdapter");
 const { searchOpenAlex } = require("../adapters/openAlexAdapter");
 const { enrichCitationCounts } = require("./citationEnricher");
+const { classifyPaper } = require("./paperClassifier");
 const { inferTags } = require("./tagger");
 const { lower, normalizeDoi, toUniqueList } = require("../utils/text");
 
@@ -45,6 +46,7 @@ function mergePaper(existing, incoming) {
     doi: incoming.doi || existing.doi,
     url: incoming.url || existing.url,
     pdfUrl: incoming.pdfUrl || existing.pdfUrl,
+    links: toUniqueList([...(existing.links || []), ...(incoming.links || [])]),
   };
 }
 
@@ -118,14 +120,21 @@ async function gatherCandidates(query, filters) {
     cvf: cvf.length,
   };
 
-  const tagged = [...openalex, ...dblp, ...cvf].map((paper) => ({
-    ...paper,
-    tags: inferTags({
-      title: paper.title,
-      abstract: paper.abstract,
-      venue: paper.venue,
-    }),
-  }));
+  const tagged = [...openalex, ...dblp, ...cvf]
+    .map((paper) =>
+      classifyPaper({
+        ...paper,
+        tags: inferTags({
+          title: paper.title,
+          abstract: paper.abstract,
+          venue: paper.venue,
+        }),
+      })
+    )
+    .map((paper) => ({
+      ...paper,
+      tags: toUniqueList([...(paper.tags || []), ...(paper.paperTypes || [])]),
+    }));
 
   const deduped = dedupePapers(tagged);
   await enrichCitationCounts(deduped, filters.minCitations > 0 ? 60 : 24);

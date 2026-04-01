@@ -35,6 +35,43 @@ const SUGGESTED_TAGS = [
   "safety",
 ];
 
+const SUPPORTED_PAPER_TYPES = [
+  "workshop",
+  "conference",
+  "journal",
+  "preprint",
+  "survey",
+  "demo",
+  "dataset",
+  "benchmark",
+];
+
+const SUGGESTED_TASKS = [
+  "segmentation",
+  "detection",
+  "classification",
+  "retrieval",
+  "question answering",
+  "generation",
+  "llm",
+  "vlm",
+  "captioning",
+  "translation",
+];
+
+const SUGGESTED_DATASETS = [
+  "imagenet",
+  "coco",
+  "cityscapes",
+  "ade20k",
+  "mmlu",
+  "squad",
+  "librispeech",
+  "wikitext",
+  "kitti",
+  "nuscenes",
+];
+
 module.exports = {
   CURRENT_YEAR,
   DEFAULT_MIN_YEAR,
@@ -45,4 +82,7 @@ module.exports = {
   DEFAULT_VENUES,
   SUPPORTED_VENUES,
   SUGGESTED_TAGS,
+  SUPPORTED_PAPER_TYPES,
+  SUGGESTED_TASKS,
+  SUGGESTED_DATASETS,
 };

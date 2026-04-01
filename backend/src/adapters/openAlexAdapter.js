@@ -47,6 +47,16 @@ function mapOpenAlexPaper(work) {
     makeAbsoluteUrl("https://openalex.org", doiUrl) ||
     makeAbsoluteUrl("https://openalex.org", work.id);
   const pdfUrl = makeAbsoluteUrl("https://openalex.org", work.primary_location?.pdf_url);
+  const links = toUniqueList(
+    [
+      sourceUrl,
+      pdfUrl,
+      work.primary_location?.landing_page_url,
+      ...(Array.isArray(work.locations)
+        ? work.locations.flatMap((location) => [location?.landing_page_url, location?.pdf_url])
+        : []),
+    ].filter(Boolean)
+  );
 
   return {
     id: `openalex:${work.id || normalizeDoi(work.doi) || title.toLowerCase()}`,
@@ -63,6 +73,7 @@ function mapOpenAlexPaper(work) {
     doi: normalizeDoi(work.doi),
     url: sourceUrl,
     pdfUrl,
+    links,
   };
 }
 

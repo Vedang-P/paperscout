@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "./App.css";
 import Header from "./components/Header";
 import SearchBar from "./components/SearchBar";
 import PaperList from "./components/PaperList";
-import { searchPapers } from "./api/papers";
+import NotesPanel from "./components/NotesPanel";
+import DeadlinesPanel from "./components/DeadlinesPanel";
+import { fetchDeadlines, searchPapers } from "./api/papers";
 
 function App() {
   const [query, setQuery] = useState("");
@@ -13,6 +15,31 @@ function App() {
   const [hasSearched, setHasSearched] = useState(false);
   const [meta, setMeta] = useState(null);
   const [activeFilters, setActiveFilters] = useState(null);
+  const [deadlines, setDeadlines] = useState([]);
+  const [deadlinesLoading, setDeadlinesLoading] = useState(false);
+  const [deadlinesError, setDeadlinesError] = useState(null);
+  const [deadlinesUpdatedAt, setDeadlinesUpdatedAt] = useState(null);
+
+  const loadDeadlines = useCallback(async () => {
+    setDeadlinesLoading(true);
+    setDeadlinesError(null);
+    try {
+      const data = await fetchDeadlines(12);
+      setDeadlines(Array.isArray(data.deadlines) ? data.deadlines : []);
+      setDeadlinesUpdatedAt(data.updatedAt || null);
+    } catch (err) {
+      setDeadlinesError(err.message || "failed to load deadlines");
+      setDeadlines([]);
+    } finally {
+      setDeadlinesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDeadlines();
+    const intervalId = setInterval(loadDeadlines, 24 * 60 * 60 * 1000);
+    return () => clearInterval(intervalId);
+  }, [loadDeadlines]);
 
   const handleSearch = async ({ query: searchQuery, filters }) => {
     if (!searchQuery || !searchQuery.trim()) return;
@@ -36,22 +63,39 @@ function App() {
   };
 
   return (
-    <div className="app">
-      <Header />
-      <SearchBar onSearch={handleSearch} suggestedTags={meta?.suggestedTags || []} />
-      {hasSearched && (
-        <PaperList
-          papers={papers}
-          loading={loading}
-          error={error}
-          query={query}
-          meta={meta}
-          filters={activeFilters}
+    <div className="app-shell">
+      <aside className="app-rail app-rail--left">
+        <NotesPanel />
+      </aside>
+
+      <main className="app-main">
+        <Header />
+        <SearchBar
+          onSearch={handleSearch}
+          suggestedTags={meta?.suggestedTags || []}
+          availableFilters={meta?.availableFilters || null}
         />
-      )}
-      <footer className="app__footer">
-        sarveshu &mdash; academic paper recommender &mdash; {new Date().getFullYear()}
-      </footer>
+        {hasSearched && (
+          <PaperList
+            papers={papers}
+            loading={loading}
+            error={error}
+            query={query}
+            meta={meta}
+            filters={activeFilters}
+          />
+        )}
+      </main>
+
+      <aside className="app-rail app-rail--right">
+        <DeadlinesPanel
+          deadlines={deadlines}
+          loading={deadlinesLoading}
+          error={deadlinesError}
+          updatedAt={deadlinesUpdatedAt}
+          onRefresh={loadDeadlines}
+        />
+      </aside>
     </div>
   );
 }

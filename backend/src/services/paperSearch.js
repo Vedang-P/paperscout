@@ -9,6 +9,9 @@ function buildQueryFromInputs(query, filters, modelOptions) {
 
   const fallback = [
     ...(filters.tags || []),
+    ...(filters.tasks || []),
+    ...(filters.datasets || []),
+    ...(filters.paperTypes || []),
     ...(modelOptions.keywords || []),
     ...(modelOptions.seedTitles || []),
     ...(modelOptions.preferredAuthors || []),
@@ -31,7 +34,7 @@ async function runRecommendationPipeline({ query, filters, modelOptions }) {
         totalAfterFilter: 0,
         dataSources: ["OpenAlex", "DBLP", "CVF Open Access"],
         sourceStats: { raw: {}, merged: {} },
-        model: { name: "paperscout-hybrid-ranker-v2", diversity: modelOptions.diversity },
+        model: { name: "sarveshu-hybrid-ranker-v3", diversity: modelOptions.diversity },
       },
     };
   }

@@ -36,6 +36,8 @@ function mapDblpPaper(hit) {
   const isWorkshop = inferWorkshopFlag(`${venue} ${title} ${info.type || ""}`);
   const doi = normalizeDoi(info.doi);
 
+  const ees = toArray(info.ee).filter(Boolean);
+
   return {
     id: `dblp:${info.key || doi || title.toLowerCase()}`,
     title,
@@ -49,8 +51,9 @@ function mapDblpPaper(hit) {
     isWorkshop,
     citationCount: 0,
     doi,
-    url: info.ee || info.url || "",
+    url: ees[0] || info.url || "",
     pdfUrl: "",
+    links: toUniqueList([...ees, info.url].filter(Boolean)),
   };
 }
 

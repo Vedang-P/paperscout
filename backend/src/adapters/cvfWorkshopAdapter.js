@@ -113,6 +113,10 @@ function parsePaperEntries(workshopUrl, html, query) {
     );
 
     const links = linksBlock.find("a");
+    const allLinks = links
+      .map((__, anchor) => makeAbsoluteUrl(CVF_BASE_URL, normalizeWhitespace($(anchor).attr("href"))))
+      .get()
+      .filter(Boolean);
     const pdfUrl = makeAbsoluteUrl(
       CVF_BASE_URL,
       normalizeWhitespace(
@@ -152,6 +156,7 @@ function parsePaperEntries(workshopUrl, html, query) {
       doi: null,
       url: externalUrl || arxivUrl || pdfUrl || "",
       pdfUrl: pdfUrl || "",
+      links: toUniqueList(allLinks),
     });
   });
 

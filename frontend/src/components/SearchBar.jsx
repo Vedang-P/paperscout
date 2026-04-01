@@ -1,8 +1,44 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const VENUE_OPTIONS = ["ICLR", "ECCV", "ACCV", "ICCV", "CVPR", "ACL", "EMNLP", "NAACL"];
 const TYPE_OPTIONS = ["workshop", "conference", "all"];
+const PAPER_TYPE_OPTIONS = [
+  "workshop",
+  "conference",
+  "journal",
+  "preprint",
+  "survey",
+  "demo",
+  "dataset",
+  "benchmark",
+];
+const TASK_OPTIONS = [
+  "segmentation",
+  "detection",
+  "classification",
+  "retrieval",
+  "question answering",
+  "generation",
+  "llm",
+  "vlm",
+  "captioning",
+  "translation",
+];
+const DATASET_OPTIONS = [
+  "imagenet",
+  "coco",
+  "cityscapes",
+  "ade20k",
+  "mmlu",
+  "squad",
+  "librispeech",
+  "wikitext",
+  "kitti",
+  "nuscenes",
+];
 const DEFAULT_VENUES = [...VENUE_OPTIONS];
+const PRESETS_STORAGE_KEY = "sarveshu-search-presets";
+const MAX_PRESETS = 20;
 
 const DEFAULT_TAG_SUGGESTIONS = [
   "nlp",
@@ -19,6 +55,30 @@ const DEFAULT_TAG_SUGGESTIONS = [
   "safety",
 ];
 
+function parseStoredPresets() {
+  if (typeof window === "undefined") return [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PRESETS_STORAGE_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function uniqueLowerCase(values) {
+  const normalized = (Array.isArray(values) ? values : [])
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean);
+  return Array.from(new Set(normalized));
+}
+
+function createId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `preset-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+}
+
 function ToggleSwitch({ checked, label, onToggle }) {
   return (
     <label className="switch-item">
@@ -31,7 +91,7 @@ function ToggleSwitch({ checked, label, onToggle }) {
   );
 }
 
-export default function SearchBar({ onSearch, suggestedTags = [] }) {
+export default function SearchBar({ onSearch, suggestedTags = [], availableFilters = null }) {
   const currentYear = new Date().getFullYear();
   const [query, setQuery] = useState("");
 
@@ -43,14 +103,43 @@ export default function SearchBar({ onSearch, suggestedTags = [] }) {
 
   const [venues, setVenues] = useState(DEFAULT_VENUES);
   const [tags, setTags] = useState([]);
+  const [paperTypes, setPaperTypes] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [datasets, setDatasets] = useState([]);
+  const [hasCodeOnly, setHasCodeOnly] = useState(false);
   const [customTag, setCustomTag] = useState("");
 
+  const [presetName, setPresetName] = useState("");
+  const [presetId, setPresetId] = useState("");
+  const [savedPresets, setSavedPresets] = useState(() => parseStoredPresets());
+
   const mergedTagSuggestions = useMemo(() => {
-    const combined = [...DEFAULT_TAG_SUGGESTIONS, ...(suggestedTags || [])].map((tag) =>
-      String(tag).toLowerCase()
-    );
-    return Array.from(new Set(combined));
+    const combined = [...DEFAULT_TAG_SUGGESTIONS, ...(suggestedTags || [])];
+    return uniqueLowerCase(combined);
   }, [suggestedTags]);
+
+  const mergedPaperTypes = useMemo(() => {
+    const fromMeta = uniqueLowerCase(availableFilters?.paperTypes || []);
+    const fallback = uniqueLowerCase(PAPER_TYPE_OPTIONS);
+    return fromMeta.length > 0 ? fromMeta : fallback;
+  }, [availableFilters]);
+
+  const mergedTasks = useMemo(() => {
+    const fromMeta = uniqueLowerCase(availableFilters?.tasks || []);
+    const fallback = uniqueLowerCase(TASK_OPTIONS);
+    return fromMeta.length > 0 ? fromMeta : fallback;
+  }, [availableFilters]);
+
+  const mergedDatasets = useMemo(() => {
+    const fromMeta = uniqueLowerCase(availableFilters?.datasets || []);
+    const fallback = uniqueLowerCase(DATASET_OPTIONS);
+    return fromMeta.length > 0 ? fromMeta : fallback;
+  }, [availableFilters]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(savedPresets));
+  }, [savedPresets]);
 
   const toggleVenue = (venue) => {
     setVenues((previous) =>
@@ -60,11 +149,12 @@ export default function SearchBar({ onSearch, suggestedTags = [] }) {
     );
   };
 
-  const toggleTag = (tag) => {
-    setTags((previous) =>
-      previous.includes(tag)
-        ? previous.filter((value) => value !== tag)
-        : [...previous, tag]
+  const toggleLowerListValue = (setter, value) => {
+    const normalized = String(value || "").trim().toLowerCase();
+    setter((previous) =>
+      previous.includes(normalized)
+        ? previous.filter((item) => item !== normalized)
+        : [...previous, normalized]
     );
   };
 
@@ -77,25 +167,95 @@ export default function SearchBar({ onSearch, suggestedTags = [] }) {
     setCustomTag("");
   };
 
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    if (!query.trim()) return;
-
+  const buildFilters = () => {
     const normalizedMinYear = Math.min(minYear, maxYear);
     const normalizedMaxYear = Math.max(minYear, maxYear);
 
+    return {
+      minYear: normalizedMinYear,
+      maxYear: normalizedMaxYear,
+      minCitations,
+      type: TYPE_OPTIONS[typeIndex],
+      limit,
+      venues,
+      tags,
+      paperTypes,
+      tasks,
+      datasets,
+      hasCode: hasCodeOnly ? true : null,
+    };
+  };
+
+  const runSearch = (queryText) => {
+    const normalizedQuery = String(queryText || "").trim();
+    if (!normalizedQuery) return;
+
     onSearch({
-      query: query.trim(),
-      filters: {
-        minYear: normalizedMinYear,
-        maxYear: normalizedMaxYear,
-        minCitations,
-        type: TYPE_OPTIONS[typeIndex],
-        limit,
-        venues,
-        tags,
-      },
+      query: normalizedQuery,
+      filters: buildFilters(),
     });
+  };
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    runSearch(query);
+  };
+
+  const handleSavePreset = () => {
+    const normalizedName = presetName.trim() || query.trim() || "preset";
+    const preset = {
+      id: createId(),
+      name: normalizedName,
+      query: query.trim(),
+      filters: buildFilters(),
+      createdAt: new Date().toISOString(),
+    };
+
+    setSavedPresets((previous) => [preset, ...previous].slice(0, MAX_PRESETS));
+    setPresetId(preset.id);
+    setPresetName("");
+  };
+
+  const applyPreset = () => {
+    const selected = savedPresets.find((preset) => preset.id === presetId);
+    if (!selected) return;
+
+    const presetQuery = String(selected.query || "");
+    const presetFilters = selected.filters || {};
+
+    setQuery(presetQuery);
+    setMinYear(Number(presetFilters.minYear) || 2021);
+    setMaxYear(Number(presetFilters.maxYear) || currentYear);
+    setMinCitations(Number(presetFilters.minCitations) || 0);
+    setLimit(Number(presetFilters.limit) || 24);
+
+    const presetType = String(presetFilters.type || "workshop").toLowerCase();
+    const resolvedTypeIndex = Math.max(0, TYPE_OPTIONS.indexOf(presetType));
+    setTypeIndex(resolvedTypeIndex);
+
+    const presetVenues = Array.isArray(presetFilters.venues)
+      ? presetFilters.venues.filter((venue) => VENUE_OPTIONS.includes(venue))
+      : DEFAULT_VENUES;
+
+    setVenues(presetVenues.length > 0 ? presetVenues : DEFAULT_VENUES);
+    setTags(uniqueLowerCase(presetFilters.tags || []));
+    setPaperTypes(uniqueLowerCase(presetFilters.paperTypes || []));
+    setTasks(uniqueLowerCase(presetFilters.tasks || []));
+    setDatasets(uniqueLowerCase(presetFilters.datasets || []));
+    setHasCodeOnly(Boolean(presetFilters.hasCode));
+
+    if (presetQuery.trim()) {
+      onSearch({
+        query: presetQuery.trim(),
+        filters: presetFilters,
+      });
+    }
+  };
+
+  const deletePreset = () => {
+    if (!presetId) return;
+    setSavedPresets((previous) => previous.filter((preset) => preset.id !== presetId));
+    setPresetId("");
   };
 
   return (
@@ -154,7 +314,7 @@ export default function SearchBar({ onSearch, suggestedTags = [] }) {
             <input
               type="range"
               min="0"
-              max="500"
+              max="1200"
               step="5"
               value={minCitations}
               onChange={(event) => setMinCitations(Number(event.target.value))}
@@ -178,7 +338,7 @@ export default function SearchBar({ onSearch, suggestedTags = [] }) {
         </div>
 
         <div className="type-slider">
-          <p className="type-slider__label">paper type</p>
+          <p className="type-slider__label">venue scope</p>
           <input
             type="range"
             min="0"
@@ -225,9 +385,62 @@ export default function SearchBar({ onSearch, suggestedTags = [] }) {
                 key={tag}
                 label={tag}
                 checked={tags.includes(tag)}
-                onToggle={() => toggleTag(tag)}
+                onToggle={() => toggleLowerListValue(setTags, tag)}
               />
             ))}
+          </div>
+        </div>
+
+        <div className="switch-group">
+          <p className="switch-group__title">paper record types</p>
+          <div className="switch-list">
+            {mergedPaperTypes.map((paperType) => (
+              <ToggleSwitch
+                key={paperType}
+                label={paperType}
+                checked={paperTypes.includes(paperType)}
+                onToggle={() => toggleLowerListValue(setPaperTypes, paperType)}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="switch-group">
+          <p className="switch-group__title">tasks</p>
+          <div className="switch-list">
+            {mergedTasks.map((task) => (
+              <ToggleSwitch
+                key={task}
+                label={task}
+                checked={tasks.includes(task)}
+                onToggle={() => toggleLowerListValue(setTasks, task)}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="switch-group">
+          <p className="switch-group__title">datasets</p>
+          <div className="switch-list">
+            {mergedDatasets.map((dataset) => (
+              <ToggleSwitch
+                key={dataset}
+                label={dataset}
+                checked={datasets.includes(dataset)}
+                onToggle={() => toggleLowerListValue(setDatasets, dataset)}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="switch-group">
+          <p className="switch-group__title">implementation</p>
+          <div className="switch-list switch-list--single">
+            <ToggleSwitch
+              label="has linked code"
+              checked={hasCodeOnly}
+              onToggle={() => setHasCodeOnly((previous) => !previous)}
+            />
           </div>
         </div>
 
@@ -249,7 +462,53 @@ export default function SearchBar({ onSearch, suggestedTags = [] }) {
             add
           </button>
         </div>
+
+        <div className="preset-bar">
+          <div className="preset-bar__row">
+            <input
+              className="preset-bar__input"
+              type="text"
+              value={presetName}
+              onChange={(event) => setPresetName(event.target.value)}
+              placeholder="preset name"
+            />
+            <button type="button" className="preset-bar__button" onClick={handleSavePreset}>
+              save preset
+            </button>
+          </div>
+
+          <div className="preset-bar__row">
+            <select
+              className="preset-bar__select"
+              value={presetId}
+              onChange={(event) => setPresetId(event.target.value)}
+            >
+              <option value="">select preset</option>
+              {savedPresets.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.name}
+                </option>
+              ))}
+            </select>
+            <button type="button" className="preset-bar__button" onClick={applyPreset}>
+              apply
+            </button>
+            <button type="button" className="preset-bar__button" onClick={deletePreset}>
+              delete
+            </button>
+          </div>
+        </div>
       </section>
+
+      <div className="search-shell__actions">
+        <button
+          type="button"
+          className="search-bar__button search-bar__button--secondary"
+          onClick={() => runSearch(query)}
+        >
+          run search
+        </button>
+      </div>
     </form>
   );
 }
