@@ -4,7 +4,7 @@ const { recommendPapers } = require("./recommendationModel");
 const { parseRecommendationModelOptions } = require("./filterParser");
 const { lower, normalizeWhitespace, toUniqueList } = require("../utils/text");
 
-const BASE_DATA_SOURCES = ["OpenAlex", "DBLP", "CVF Open Access"];
+const BASE_DATA_SOURCES = ["OpenAlex", "DBLP", "arXiv", "CVF Open Access"];
 const MIN_CANDIDATE_TARGET = 18;
 
 const QUERY_EXPANSION_RULES = [
@@ -169,10 +169,11 @@ function mergeCandidateLists(primary = [], secondary = []) {
 }
 
 function countMergedSources(candidates = []) {
-  const stats = { openalex: 0, dblp: 0, cvf: 0, total: 0 };
+  const stats = { openalex: 0, dblp: 0, arxiv: 0, cvf: 0, total: 0 };
   for (const candidate of candidates) {
     if (candidate?.source === "OpenAlex") stats.openalex += 1;
     if (candidate?.source === "DBLP") stats.dblp += 1;
+    if (candidate?.source === "arXiv") stats.arxiv += 1;
     if (candidate?.source === "CVF Open Access") stats.cvf += 1;
   }
   stats.total = candidates.length;
@@ -186,6 +187,7 @@ function mergeSourceStats(primaryStats, secondaryStats, mergedCandidates) {
     raw: {
       openalex: (rawPrimary.openalex || 0) + (rawSecondary.openalex || 0),
       dblp: (rawPrimary.dblp || 0) + (rawSecondary.dblp || 0),
+      arxiv: (rawPrimary.arxiv || 0) + (rawSecondary.arxiv || 0),
       cvf: (rawPrimary.cvf || 0) + (rawSecondary.cvf || 0),
     },
     merged: countMergedSources(mergedCandidates),

@@ -71,6 +71,9 @@ function inferPaperTypes(paper) {
   if (looksLikePreprint) {
     types.add("preprint");
   }
+  if (!isWorkshop && !isJournal && paper.conference) {
+    types.add("conference");
+  }
   if (text.includes("survey") || text.includes("review")) {
     types.add("survey");
   }

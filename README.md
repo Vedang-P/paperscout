@@ -12,7 +12,7 @@ Request flow:
 2. Backend parses and clamps filters (`minYear`, `maxYear`, `limit`, etc.).
 3. Query is typo-normalized (fuzzy correction) before retrieval/ranking.
    - Query can be empty if filters/tags/tasks/datasets drive intent.
-4. Multi-source retrieval runs in parallel (OpenAlex, DBLP, CVF workshop scraper).
+4. Multi-source retrieval runs in parallel (OpenAlex, DBLP, arXiv, CVF workshop scraper).
 5. Candidates are normalized, tagged, typed, deduplicated, and citation-enriched.
 6. Hard filters are applied.
 7. Hybrid ranking + MMR diversification reranks results.
@@ -53,6 +53,7 @@ Files:
 
 - `backend/src/adapters/openAlexAdapter.js`
 - `backend/src/adapters/dblpAdapter.js`
+- `backend/src/adapters/arxivAdapter.js`
 - `backend/src/adapters/cvfWorkshopAdapter.js`
 - `backend/src/services/candidateAggregator.js`
 

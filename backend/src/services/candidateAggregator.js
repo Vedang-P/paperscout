@@ -1,6 +1,7 @@
 const { searchCvfWorkshops } = require("../adapters/cvfWorkshopAdapter");
 const { searchDblp } = require("../adapters/dblpAdapter");
 const { searchOpenAlex } = require("../adapters/openAlexAdapter");
+const { searchArxiv } = require("../adapters/arxivAdapter");
 const { getCache, getStaleCache, setCache } = require("../utils/cache");
 const { enrichCitationCounts } = require("./citationEnricher");
 const { classifyPaper } = require("./paperClassifier");
@@ -10,6 +11,7 @@ const { lower, normalizeDoi, toUniqueList } = require("../utils/text");
 const SOURCE_NAME = {
   openalex: "OpenAlex",
   dblp: "DBLP",
+  arxiv: "arXiv",
   cvf: "CVF Open Access",
 };
 const CANDIDATE_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -93,6 +95,7 @@ function makeSourceStats(rawResults, mergedResults) {
     merged: {
       openalex: fromSource(SOURCE_NAME.openalex),
       dblp: fromSource(SOURCE_NAME.dblp),
+      arxiv: fromSource(SOURCE_NAME.arxiv),
       cvf: fromSource(SOURCE_NAME.cvf),
       total: mergedResults.length,
     },
@@ -116,6 +119,7 @@ async function gatherCandidates(query, filters) {
   const sourceTasks = {
     openalex: () => searchOpenAlex(query, filters),
     dblp: () => searchDblp(query, filters),
+    arxiv: () => searchArxiv(query, filters),
     cvf: () => searchCvfWorkshops(query, filters),
   };
 
@@ -123,19 +127,21 @@ async function gatherCandidates(query, filters) {
     sourceTasks.cvf = async () => [];
   }
 
-  const [openalex, dblp, cvf] = await Promise.all([
+  const [openalex, dblp, arxiv, cvf] = await Promise.all([
     sourceTasks.openalex().catch(() => []),
     sourceTasks.dblp().catch(() => []),
+    sourceTasks.arxiv().catch(() => []),
     sourceTasks.cvf().catch(() => []),
   ]);
 
   const raw = {
     openalex: openalex.length,
     dblp: dblp.length,
+    arxiv: arxiv.length,
     cvf: cvf.length,
   };
 
-  const tagged = [...openalex, ...dblp, ...cvf]
+  const tagged = [...openalex, ...dblp, ...arxiv, ...cvf]
     .map((paper) =>
       classifyPaper({
         ...paper,

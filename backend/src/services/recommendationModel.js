@@ -11,6 +11,7 @@ const { lower, normalizeWhitespace, parseCsvParam, tokenize } = require("../util
 
 const SOURCE_RELIABILITY = {
   OpenAlex: 1,
+  arXiv: 0.84,
   "CVF Open Access": 0.92,
   DBLP: 0.86,
 };
@@ -522,6 +523,7 @@ function recommendPapers({ query, filters, candidates, sourceStats, model }) {
 const SOURCE_NAME = {
   openalex: "OpenAlex",
   dblp: "DBLP",
+  arxiv: "arXiv",
   cvf: "CVF Open Access",
 };
 
