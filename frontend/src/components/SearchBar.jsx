@@ -38,7 +38,9 @@ const DATASET_OPTIONS = [
 ];
 const DEFAULT_VENUES = [...VENUE_OPTIONS];
 const PRESETS_STORAGE_KEY = "sarveshu-search-presets";
+const SEARCH_ALERTS_STORAGE_KEY = "sarveshu-search-alerts";
 const MAX_PRESETS = 20;
+const MAX_ALERTS = 20;
 
 const DEFAULT_TAG_SUGGESTIONS = [
   "nlp",
@@ -59,6 +61,16 @@ function parseStoredPresets() {
   if (typeof window === "undefined") return [];
   try {
     const parsed = JSON.parse(localStorage.getItem(PRESETS_STORAGE_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseStoredSearchAlerts() {
+  if (typeof window === "undefined") return [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SEARCH_ALERTS_STORAGE_KEY) || "[]");
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -108,15 +120,18 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
   const [datasets, setDatasets] = useState([]);
   const [hasCodeOnly, setHasCodeOnly] = useState(false);
   const [customTag, setCustomTag] = useState("");
+  const [customTags, setCustomTags] = useState([]);
 
   const [presetName, setPresetName] = useState("");
   const [presetId, setPresetId] = useState("");
   const [savedPresets, setSavedPresets] = useState(() => parseStoredPresets());
+  const [alertName, setAlertName] = useState("");
+  const [savedAlerts, setSavedAlerts] = useState(() => parseStoredSearchAlerts());
 
   const mergedTagSuggestions = useMemo(() => {
-    const combined = [...DEFAULT_TAG_SUGGESTIONS, ...(suggestedTags || [])];
+    const combined = [...DEFAULT_TAG_SUGGESTIONS, ...(suggestedTags || []), ...customTags];
     return uniqueLowerCase(combined);
-  }, [suggestedTags]);
+  }, [suggestedTags, customTags]);
 
   const mergedPaperTypes = useMemo(() => {
     const fromMeta = uniqueLowerCase(availableFilters?.paperTypes || []);
@@ -141,6 +156,11 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
     localStorage.setItem(PRESETS_STORAGE_KEY, JSON.stringify(savedPresets));
   }, [savedPresets]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(SEARCH_ALERTS_STORAGE_KEY, JSON.stringify(savedAlerts));
+  }, [savedAlerts]);
+
   const toggleVenue = (venue) => {
     setVenues((previous) =>
       previous.includes(venue)
@@ -164,7 +184,17 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
     setTags((previous) =>
       previous.includes(normalized) ? previous : [...previous, normalized]
     );
+    setCustomTags((previous) =>
+      previous.includes(normalized) ? previous : [...previous, normalized]
+    );
     setCustomTag("");
+  };
+
+  const removeCustomTag = (tagToRemove) => {
+    const normalized = String(tagToRemove || "").trim().toLowerCase();
+    if (!normalized) return;
+    setCustomTags((previous) => previous.filter((tag) => tag !== normalized));
+    setTags((previous) => previous.filter((tag) => tag !== normalized));
   };
 
   const buildFilters = () => {
@@ -237,8 +267,16 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
       ? presetFilters.venues.filter((venue) => VENUE_OPTIONS.includes(venue))
       : DEFAULT_VENUES;
 
+    const nextTags = uniqueLowerCase(presetFilters.tags || []);
+    const knownBaseTags = uniqueLowerCase([
+      ...DEFAULT_TAG_SUGGESTIONS,
+      ...(suggestedTags || []),
+    ]);
+    const inferredCustomTags = nextTags.filter((tag) => !knownBaseTags.includes(tag));
+
     setVenues(presetVenues.length > 0 ? presetVenues : DEFAULT_VENUES);
-    setTags(uniqueLowerCase(presetFilters.tags || []));
+    setTags(nextTags);
+    setCustomTags(inferredCustomTags);
     setPaperTypes(uniqueLowerCase(presetFilters.paperTypes || []));
     setTasks(uniqueLowerCase(presetFilters.tasks || []));
     setDatasets(uniqueLowerCase(presetFilters.datasets || []));
@@ -256,6 +294,52 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
     if (!presetId) return;
     setSavedPresets((previous) => previous.filter((preset) => preset.id !== presetId));
     setPresetId("");
+  };
+
+  const handleSaveAlert = async () => {
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery) return;
+
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      try {
+        await Notification.requestPermission();
+      } catch {
+        // Ignore notification permission errors.
+      }
+    }
+
+    const alert = {
+      id: createId(),
+      name: alertName.trim() || normalizedQuery.slice(0, 60),
+      query: normalizedQuery,
+      filters: buildFilters(),
+      enabled: true,
+      lastTopPaperIds: [],
+      lastResultCount: 0,
+      lastCheckedAt: null,
+      lastNotifiedAt: null,
+      createdAt: new Date().toISOString(),
+    };
+
+    setSavedAlerts((previous) => [alert, ...previous].slice(0, MAX_ALERTS));
+    setAlertName("");
+  };
+
+  const toggleAlertEnabled = (alertId) => {
+    setSavedAlerts((previous) =>
+      previous.map((alert) =>
+        alert.id === alertId
+          ? {
+              ...alert,
+              enabled: !alert.enabled,
+            }
+          : alert
+      )
+    );
+  };
+
+  const deleteAlert = (alertId) => {
+    setSavedAlerts((previous) => previous.filter((alert) => alert.id !== alertId));
   };
 
   return (
@@ -463,6 +547,28 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
           </button>
         </div>
 
+        {customTags.length > 0 ? (
+          <div className="custom-tags-added">
+            <p className="switch-group__title">custom tags added</p>
+            <div className="custom-tags-added__list">
+              {customTags.map((tag) => (
+                <span key={`custom-tag-${tag}`} className="custom-tags-added__item">
+                  <span>{tag}</span>
+                  <button
+                    type="button"
+                    className="custom-tags-added__remove"
+                    onClick={() => removeCustomTag(tag)}
+                    aria-label={`remove custom tag ${tag}`}
+                    title={`remove ${tag}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <div className="preset-bar">
           <div className="preset-bar__row">
             <input
@@ -497,6 +603,51 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
               delete
             </button>
           </div>
+        </div>
+
+        <div className="alerts-bar">
+          <p className="switch-group__title">notify me alerts</p>
+          <div className="preset-bar__row">
+            <input
+              className="preset-bar__input"
+              type="text"
+              value={alertName}
+              onChange={(event) => setAlertName(event.target.value)}
+              placeholder="alert name"
+            />
+            <button type="button" className="preset-bar__button" onClick={handleSaveAlert}>
+              notify me
+            </button>
+          </div>
+
+          {savedAlerts.length > 0 ? (
+            <div className="alerts-list">
+              {savedAlerts.map((alert) => (
+                <div key={alert.id} className="alerts-list__item">
+                  <div className="alerts-list__meta">
+                    <p className="alerts-list__name">{alert.name}</p>
+                    <p className="alerts-list__query">{alert.query}</p>
+                  </div>
+                  <div className="alerts-list__actions">
+                    <button
+                      type="button"
+                      className="preset-bar__button"
+                      onClick={() => toggleAlertEnabled(alert.id)}
+                    >
+                      {alert.enabled ? "pause" : "resume"}
+                    </button>
+                    <button
+                      type="button"
+                      className="preset-bar__button"
+                      onClick={() => deleteAlert(alert.id)}
+                    >
+                      remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       </section>
 

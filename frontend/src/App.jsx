@@ -7,6 +7,25 @@ import NotesPanel from "./components/NotesPanel";
 import DeadlinesPanel from "./components/DeadlinesPanel";
 import { fetchDeadlines, searchPapers } from "./api/papers";
 
+const SEARCH_ALERTS_STORAGE_KEY = "sarveshu-search-alerts";
+const SEARCH_ALERT_CHECK_INTERVAL_MS = 45 * 60 * 1000;
+const MAX_ALERTS_PER_CHECK = 6;
+
+function readStoredSearchAlerts() {
+  if (typeof window === "undefined") return [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SEARCH_ALERTS_STORAGE_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredSearchAlerts(alerts) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(SEARCH_ALERTS_STORAGE_KEY, JSON.stringify(alerts));
+}
+
 function GithubMark() {
   return (
     <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
@@ -51,6 +70,71 @@ function App() {
     const intervalId = setInterval(loadDeadlines, 24 * 60 * 60 * 1000);
     return () => clearInterval(intervalId);
   }, [loadDeadlines]);
+
+  const checkSearchAlerts = useCallback(async () => {
+    if (typeof window === "undefined") return;
+
+    const allAlerts = readStoredSearchAlerts();
+    if (allAlerts.length === 0) return;
+
+    const enabledAlerts = allAlerts
+      .filter((alert) => alert && alert.enabled !== false && String(alert.query || "").trim())
+      .slice(0, MAX_ALERTS_PER_CHECK);
+
+    if (enabledAlerts.length === 0) return;
+
+    const notificationsEnabled =
+      typeof Notification !== "undefined" && Notification.permission === "granted";
+
+    const updatesById = new Map();
+    for (const alert of enabledAlerts) {
+      try {
+        const payload = await searchPapers({
+          query: String(alert.query || "").trim(),
+          filters: alert.filters || {},
+        });
+
+        const results = Array.isArray(payload?.results) ? payload.results : [];
+        const topPaperIds = results.slice(0, 3).map((paper) => paper.id).filter(Boolean);
+        const previousTopIds = Array.isArray(alert.lastTopPaperIds) ? alert.lastTopPaperIds : [];
+        const hasPrevious = previousTopIds.length > 0;
+        const hasChanged = previousTopIds.join("|") !== topPaperIds.join("|");
+
+        if (notificationsEnabled && hasPrevious && hasChanged) {
+          const topTitle = results[0]?.title || "new top result";
+          new Notification(`Sarveshu alert: ${alert.name || alert.query}`, {
+            body: `${results.length} results. New top paper: ${topTitle}`,
+          });
+        }
+
+        updatesById.set(alert.id, {
+          ...alert,
+          lastTopPaperIds: topPaperIds,
+          lastResultCount: results.length,
+          lastCheckedAt: new Date().toISOString(),
+          lastNotifiedAt:
+            notificationsEnabled && hasPrevious && hasChanged
+              ? new Date().toISOString()
+              : alert.lastNotifiedAt || null,
+        });
+      } catch {
+        updatesById.set(alert.id, {
+          ...alert,
+          lastCheckedAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    if (updatesById.size === 0) return;
+    const merged = allAlerts.map((alert) => updatesById.get(alert.id) || alert);
+    writeStoredSearchAlerts(merged);
+  }, []);
+
+  useEffect(() => {
+    checkSearchAlerts();
+    const intervalId = setInterval(checkSearchAlerts, SEARCH_ALERT_CHECK_INTERVAL_MS);
+    return () => clearInterval(intervalId);
+  }, [checkSearchAlerts]);
 
   const handleSearch = async ({ query: searchQuery, filters }) => {
     if (!searchQuery || !searchQuery.trim()) return;
