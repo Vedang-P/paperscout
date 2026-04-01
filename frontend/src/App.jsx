@@ -50,7 +50,7 @@ function App() {
         />
       )}
       <footer className="app__footer">
-        paperscout &mdash; multi-source workshop scraper &mdash; {new Date().getFullYear()}
+        sarveshu &mdash; academic paper recommender &mdash; {new Date().getFullYear()}
       </footer>
     </div>
   );

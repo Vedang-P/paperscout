@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 
 const VENUE_OPTIONS = ["ICLR", "ECCV", "ACCV", "ICCV", "CVPR", "ACL", "EMNLP", "NAACL"];
+const TYPE_OPTIONS = ["workshop", "conference", "all"];
 const DEFAULT_VENUES = [...VENUE_OPTIONS];
+
 const DEFAULT_TAG_SUGGESTIONS = [
   "nlp",
   "cv",
@@ -17,37 +19,61 @@ const DEFAULT_TAG_SUGGESTIONS = [
   "safety",
 ];
 
+function ToggleSwitch({ checked, label, onToggle }) {
+  return (
+    <label className="switch-item">
+      <span className="switch-item__label">{label}</span>
+      <span className="switch">
+        <input type="checkbox" checked={checked} onChange={onToggle} />
+        <span className="switch__slider" />
+      </span>
+    </label>
+  );
+}
+
 export default function SearchBar({ onSearch, suggestedTags = [] }) {
   const currentYear = new Date().getFullYear();
   const [query, setQuery] = useState("");
+
   const [minYear, setMinYear] = useState(2021);
   const [maxYear, setMaxYear] = useState(currentYear);
   const [minCitations, setMinCitations] = useState(0);
-  const [maxCitations, setMaxCitations] = useState("");
-  const [type, setType] = useState("workshop");
-  const [limit, setLimit] = useState(40);
+  const [limit, setLimit] = useState(24);
+  const [typeIndex, setTypeIndex] = useState(0);
+
   const [venues, setVenues] = useState(DEFAULT_VENUES);
   const [tags, setTags] = useState([]);
   const [customTag, setCustomTag] = useState("");
-  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const mergedTagSuggestions = useMemo(() => {
-    const set = new Set([...DEFAULT_TAG_SUGGESTIONS, ...(suggestedTags || [])].map((tag) => tag.toLowerCase()));
-    return Array.from(set);
+    const combined = [...DEFAULT_TAG_SUGGESTIONS, ...(suggestedTags || [])].map((tag) =>
+      String(tag).toLowerCase()
+    );
+    return Array.from(new Set(combined));
   }, [suggestedTags]);
 
   const toggleVenue = (venue) => {
-    setVenues((prev) => prev.includes(venue) ? prev.filter((v) => v !== venue) : [...prev, venue]);
+    setVenues((previous) =>
+      previous.includes(venue)
+        ? previous.filter((value) => value !== venue)
+        : [...previous, venue]
+    );
   };
 
   const toggleTag = (tag) => {
-    setTags((prev) => prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]);
+    setTags((previous) =>
+      previous.includes(tag)
+        ? previous.filter((value) => value !== tag)
+        : [...previous, tag]
+    );
   };
 
   const addCustomTag = () => {
     const normalized = customTag.trim().toLowerCase();
     if (!normalized) return;
-    setTags((prev) => prev.includes(normalized) ? prev : [...prev, normalized]);
+    setTags((previous) =>
+      previous.includes(normalized) ? previous : [...previous, normalized]
+    );
     setCustomTag("");
   };
 
@@ -55,185 +81,175 @@ export default function SearchBar({ onSearch, suggestedTags = [] }) {
     event.preventDefault();
     if (!query.trim()) return;
 
+    const normalizedMinYear = Math.min(minYear, maxYear);
+    const normalizedMaxYear = Math.max(minYear, maxYear);
+
     onSearch({
       query: query.trim(),
       filters: {
-        minYear: Math.min(Number(minYear), Number(maxYear)),
-        maxYear: Math.max(Number(minYear), Number(maxYear)),
-        minCitations: Number(minCitations) || 0,
-        maxCitations: maxCitations === "" ? undefined : Number(maxCitations),
-        type,
+        minYear: normalizedMinYear,
+        maxYear: normalizedMaxYear,
+        minCitations,
+        type: TYPE_OPTIONS[typeIndex],
+        limit,
         venues,
         tags,
-        limit: Number(limit) || 40,
       },
     });
   };
 
-  const filterSummary = `${minYear}–${maxYear} · citations ≥ ${minCitations} · limit ${limit} · ${type}`;
-
   return (
     <form className="search-shell" onSubmit={handleSubmit}>
-      <div className="search-bar">
+      <div className="search-input-wrap">
         <input
           className="search-bar__input"
           type="text"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="search workshop papers, topics, methods, authors..."
-          autoFocus
+          placeholder="search papers, methods, datasets, authors..."
           autoComplete="off"
           spellCheck="false"
+          autoFocus
         />
-        <button className="search-bar__button" type="submit">
-          search
+        <button type="submit" className="search-bar__button">
+          query
         </button>
       </div>
 
-      <div className="filters-section">
-        <button
-          type="button"
-          className="filters-toggle"
-          onClick={() => setFiltersOpen((prev) => !prev)}
-          aria-expanded={filtersOpen}
-        >
-          {filtersOpen ? "▾" : "▸"} filters
-        </button>
-
-        {!filtersOpen && <p className="filters-summary">{filterSummary}</p>}
-
-        <div className={`filters-body ${filtersOpen ? "filters-body--open" : "filters-body--closed"}`}>
-          <div className="filters">
-            <label className="filters__field">
-              <div className="filters__label-row">
-                <span>from year</span>
-                <span className="filters__label-value">{minYear}</span>
-              </div>
-              <input
-                type="range"
-                min="2000"
-                max={currentYear}
-                value={minYear}
-                onChange={(e) => setMinYear(Number(e.target.value))}
-              />
-            </label>
-
-            <label className="filters__field">
-              <div className="filters__label-row">
-                <span>to year</span>
-                <span className="filters__label-value">{maxYear}</span>
-              </div>
-              <input
-                type="range"
-                min="2000"
-                max={currentYear}
-                value={maxYear}
-                onChange={(e) => setMaxYear(Number(e.target.value))}
-              />
-            </label>
-
-            <label className="filters__field">
-              <span>type</span>
-              <select value={type} onChange={(e) => setType(e.target.value)}>
-                <option value="workshop">workshop</option>
-                <option value="conference">conference</option>
-                <option value="all">all</option>
-              </select>
-            </label>
-
-            <label className="filters__field">
-              <div className="filters__label-row">
-                <span>min citations</span>
-                <span className="filters__label-value">{minCitations}</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="500"
-                step="5"
-                value={minCitations}
-                onChange={(e) => setMinCitations(Number(e.target.value))}
-              />
-            </label>
-
-            <label className="filters__field">
-              <span>max citations</span>
-              <input
-                type="number"
-                min="0"
-                placeholder="optional"
-                value={maxCitations}
-                onChange={(e) => setMaxCitations(e.target.value)}
-              />
-            </label>
-
-            <label className="filters__field">
-              <div className="filters__label-row">
-                <span>limit</span>
-                <span className="filters__label-value">{limit}</span>
-              </div>
-              <input
-                type="range"
-                min="1"
-                max="100"
-                value={limit}
-                onChange={(e) => setLimit(Number(e.target.value))}
-              />
-            </label>
-          </div>
-
-          <div className="chip-group">
-            <p className="chip-group__label">venues</p>
-            <div className="chip-group__items">
-              {VENUE_OPTIONS.map((venue) => (
-                <button
-                  type="button"
-                  key={venue}
-                  className={`chip ${venues.includes(venue) ? "chip--active" : ""}`}
-                  onClick={() => toggleVenue(venue)}
-                >
-                  {venue}
-                </button>
-              ))}
+      <section className="filters-panel">
+        <div className="slider-grid">
+          <label className="slider-field">
+            <div className="slider-field__meta">
+              <span>from year</span>
+              <strong>{minYear}</strong>
             </div>
-          </div>
-
-          <div className="chip-group">
-            <p className="chip-group__label">tags</p>
-            <div className="chip-group__items">
-              {mergedTagSuggestions.map((tag) => (
-                <button
-                  type="button"
-                  key={tag}
-                  className={`chip ${tags.includes(tag) ? "chip--active" : ""}`}
-                  onClick={() => toggleTag(tag)}
-                >
-                  {tag}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="custom-tag">
             <input
-              className="custom-tag__input"
-              type="text"
-              value={customTag}
-              onChange={(event) => setCustomTag(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  addCustomTag();
-                }
-              }}
-              placeholder="add custom tag"
+              type="range"
+              min="2021"
+              max={currentYear}
+              value={minYear}
+              onChange={(event) => setMinYear(Number(event.target.value))}
             />
-            <button type="button" className="custom-tag__button" onClick={addCustomTag}>
-              add tag
-            </button>
+          </label>
+
+          <label className="slider-field">
+            <div className="slider-field__meta">
+              <span>to year</span>
+              <strong>{maxYear}</strong>
+            </div>
+            <input
+              type="range"
+              min="2021"
+              max={currentYear}
+              value={maxYear}
+              onChange={(event) => setMaxYear(Number(event.target.value))}
+            />
+          </label>
+
+          <label className="slider-field">
+            <div className="slider-field__meta">
+              <span>min citations</span>
+              <strong>{minCitations}</strong>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="500"
+              step="5"
+              value={minCitations}
+              onChange={(event) => setMinCitations(Number(event.target.value))}
+            />
+          </label>
+
+          <label className="slider-field">
+            <div className="slider-field__meta">
+              <span>result limit</span>
+              <strong>{limit}</strong>
+            </div>
+            <input
+              type="range"
+              min="5"
+              max="100"
+              step="1"
+              value={limit}
+              onChange={(event) => setLimit(Number(event.target.value))}
+            />
+          </label>
+        </div>
+
+        <div className="type-slider">
+          <p className="type-slider__label">paper type</p>
+          <input
+            type="range"
+            min="0"
+            max={TYPE_OPTIONS.length - 1}
+            step="1"
+            value={typeIndex}
+            onChange={(event) => setTypeIndex(Number(event.target.value))}
+          />
+          <div className="type-slider__ticks">
+            {TYPE_OPTIONS.map((option, index) => (
+              <span
+                key={option}
+                className={
+                  index === typeIndex
+                    ? "type-slider__tick type-slider__tick--active"
+                    : "type-slider__tick"
+                }
+              >
+                {option}
+              </span>
+            ))}
           </div>
         </div>
-      </div>
+
+        <div className="switch-group">
+          <p className="switch-group__title">venues</p>
+          <div className="switch-list">
+            {VENUE_OPTIONS.map((venue) => (
+              <ToggleSwitch
+                key={venue}
+                label={venue}
+                checked={venues.includes(venue)}
+                onToggle={() => toggleVenue(venue)}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="switch-group">
+          <p className="switch-group__title">topic tags</p>
+          <div className="switch-list">
+            {mergedTagSuggestions.map((tag) => (
+              <ToggleSwitch
+                key={tag}
+                label={tag}
+                checked={tags.includes(tag)}
+                onToggle={() => toggleTag(tag)}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="custom-tag">
+          <input
+            className="custom-tag__input"
+            type="text"
+            value={customTag}
+            onChange={(event) => setCustomTag(event.target.value)}
+            placeholder="add custom tag"
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                addCustomTag();
+              }
+            }}
+          />
+          <button type="button" className="custom-tag__button" onClick={addCustomTag}>
+            add
+          </button>
+        </div>
+      </section>
     </form>
   );
 }
