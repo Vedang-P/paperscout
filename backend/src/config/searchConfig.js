@@ -6,7 +6,7 @@ const DEFAULT_MIN_CITATIONS = 0;
 const DEFAULT_LIMIT = 40;
 const MAX_LIMIT = 100;
 
-const DEFAULT_VENUES = ["ICLR", "ECCV", "ACCV"];
+const DEFAULT_VENUES = [];
 const SUPPORTED_VENUES = [
   "ICLR",
   "ECCV",
@@ -14,6 +14,12 @@ const SUPPORTED_VENUES = [
   "ICCV",
   "CVPR",
   "WACV",
+  "NEURIPS",
+  "ICML",
+  "AAAI",
+  "IJCAI",
+  "WWW",
+  "KDD",
   "ACL",
   "EMNLP",
   "NAACL",

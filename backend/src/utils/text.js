@@ -162,16 +162,125 @@ function toUniqueList(values) {
 
 function inferConference(text) {
   const normalized = lower(text);
-  if (normalized.includes("iclr")) return "ICLR";
-  if (normalized.includes("eccv")) return "ECCV";
-  if (normalized.includes("accv")) return "ACCV";
-  if (normalized.includes("iccv")) return "ICCV";
-  if (normalized.includes("cvpr")) return "CVPR";
-  if (normalized.includes("wacv")) return "WACV";
-  if (normalized.includes("emnlp")) return "EMNLP";
-  if (normalized.includes("naacl")) return "NAACL";
-  if (normalized.includes("acl")) return "ACL";
-  if (normalized.includes("coling")) return "COLING";
+
+  if (
+    normalized.includes("iclr") ||
+    normalized.includes("international conference on learning representations")
+  ) {
+    return "ICLR";
+  }
+
+  if (
+    normalized.includes("eccv") ||
+    normalized.includes("european conference on computer vision")
+  ) {
+    return "ECCV";
+  }
+
+  if (
+    normalized.includes("accv") ||
+    normalized.includes("asian conference on computer vision")
+  ) {
+    return "ACCV";
+  }
+
+  if (
+    normalized.includes("iccv") ||
+    normalized.includes("international conference on computer vision")
+  ) {
+    return "ICCV";
+  }
+
+  if (
+    normalized.includes("cvpr") ||
+    normalized.includes("conference on computer vision and pattern recognition")
+  ) {
+    return "CVPR";
+  }
+
+  if (
+    normalized.includes("wacv") ||
+    normalized.includes("winter conference on applications of computer vision")
+  ) {
+    return "WACV";
+  }
+
+  if (
+    normalized.includes("neurips") ||
+    normalized.includes("nips") ||
+    normalized.includes("neural information processing systems")
+  ) {
+    return "NEURIPS";
+  }
+
+  if (
+    normalized.includes("icml") ||
+    normalized.includes("international conference on machine learning")
+  ) {
+    return "ICML";
+  }
+
+  if (
+    normalized.includes("aaai") ||
+    normalized.includes("aaai conference on artificial intelligence")
+  ) {
+    return "AAAI";
+  }
+
+  if (
+    normalized.includes("ijcai") ||
+    normalized.includes("international joint conference on artificial intelligence")
+  ) {
+    return "IJCAI";
+  }
+
+  if (
+    normalized.includes("www conference") ||
+    normalized.includes("the web conference") ||
+    normalized.includes("world wide web conference")
+  ) {
+    return "WWW";
+  }
+
+  if (
+    normalized.includes("sigkdd") ||
+    normalized.includes("kdd conference") ||
+    normalized.includes("knowledge discovery and data mining")
+  ) {
+    return "KDD";
+  }
+
+  if (
+    normalized.includes("emnlp") ||
+    normalized.includes("conference on empirical methods in natural language processing")
+  ) {
+    return "EMNLP";
+  }
+
+  if (
+    normalized.includes("naacl") ||
+    normalized.includes("north american chapter of the association for computational linguistics")
+  ) {
+    return "NAACL";
+  }
+
+  if (
+    normalized.includes(" acl ") ||
+    normalized.startsWith("acl ") ||
+    normalized.endsWith(" acl") ||
+    normalized.includes("annual meeting of the association for computational linguistics") ||
+    normalized.includes("association for computational linguistics annual meeting")
+  ) {
+    return "ACL";
+  }
+
+  if (
+    normalized.includes("coling") ||
+    normalized.includes("international conference on computational linguistics")
+  ) {
+    return "COLING";
+  }
+
   return null;
 }
 

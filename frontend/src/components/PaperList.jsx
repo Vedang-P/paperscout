@@ -162,6 +162,12 @@ export default function PaperList({ papers, loading, error, query, meta, filters
               interpreted query: {meta.queryNormalization.correctedQuery}
             </p>
           ) : null}
+          {meta?.retrieval?.usedBroadenedQuery ? (
+            <p className="paper-list__sources">
+              retrieval expanded: {meta.retrieval.finalCandidates} candidates (target{" "}
+              {meta.retrieval.candidateTarget})
+            </p>
+          ) : null}
         </div>
 
         <div className="paper-list__exports">

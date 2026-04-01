@@ -7,6 +7,7 @@ const {
   DEFAULT_VENUES,
   MAX_LIMIT,
   SUPPORTED_PAPER_TYPES,
+  SUPPORTED_VENUES,
 } = require("../config/searchConfig");
 const { parseCsvParam, parseNumber, parseYear, toUniqueList } = require("../utils/text");
 const MAX_FILTER_ITEMS = 25;
@@ -17,7 +18,7 @@ function clamp(number, min, max) {
 }
 
 function normalizeType(value) {
-  const type = String(value || "workshop").toLowerCase();
+  const type = String(value || "conference").toLowerCase();
   if (type === "all") return "all";
   if (type === "journal") return "journal";
   if (type === "conference") return "conference";
@@ -53,9 +54,21 @@ function parseSearchFilters(queryParams = {}) {
     rawMaxCitations === null ? null : Math.max(minCitations, Math.floor(rawMaxCitations));
   const limit = clamp(Math.floor(rawLimit), 1, MAX_LIMIT);
 
-  const venues = clampList(toUniqueList(parseCsvParam(queryParams.venues))).map((v) =>
-    v.toUpperCase()
-  );
+  const requestedVenues = clampList(toUniqueList(parseCsvParam(queryParams.venues)))
+    .map((v) => v.toUpperCase())
+    .filter((venue) => SUPPORTED_VENUES.includes(venue));
+  const venueSet = new Set(requestedVenues);
+  const allVenuesSelected =
+    requestedVenues.length >= SUPPORTED_VENUES.length &&
+    SUPPORTED_VENUES.every((venue) => venueSet.has(venue));
+  const defaultVenues = toUniqueList(DEFAULT_VENUES)
+    .map((v) => String(v).toUpperCase())
+    .filter((venue) => SUPPORTED_VENUES.includes(venue));
+  const venues = allVenuesSelected
+    ? []
+    : requestedVenues.length > 0
+      ? requestedVenues
+      : defaultVenues;
   const tags = clampList(toUniqueList(parseCsvParam(queryParams.tags))).map((tag) =>
     tag.toLowerCase()
   );
@@ -81,7 +94,7 @@ function parseSearchFilters(queryParams = {}) {
     minCitations,
     maxCitations,
     type: normalizeType(queryParams.type),
-    venues: venues.length > 0 ? venues : DEFAULT_VENUES,
+    venues,
     tags,
     paperTypes,
     tasks,

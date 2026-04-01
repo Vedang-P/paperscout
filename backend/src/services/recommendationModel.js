@@ -342,6 +342,7 @@ function recommendPapers({ query, filters, candidates, sourceStats, model }) {
   let filteredCandidates = applyHardFilters(candidates, query, filters, profile);
   const fallbackIds = new Set();
   const fallbackSteps = [];
+  const lowResultThreshold = Math.max(10, Math.floor(filters.limit * 0.4));
 
   if (filteredCandidates.length === 0 && filters.tags.length > 0) {
     const relaxedByTagMode = applyHardFilters(
@@ -364,6 +365,17 @@ function recommendPapers({ query, filters, candidates, sourceStats, model }) {
     markNewFallbackIds(filteredCandidates, merged, fallbackIds);
     if (merged.length > filteredCandidates.length) {
       fallbackSteps.push("type_relaxed_to_all");
+      filteredCandidates = merged;
+    }
+  }
+
+  if (filters.venues.length > 0 && filteredCandidates.length < lowResultThreshold) {
+    const relaxedVenueFilter = { ...filters, venues: [], type: "all" };
+    const relaxedCandidates = applyHardFilters(candidates, query, relaxedVenueFilter, profile);
+    const merged = mergeById(filteredCandidates, relaxedCandidates);
+    markNewFallbackIds(filteredCandidates, merged, fallbackIds);
+    if (merged.length > filteredCandidates.length) {
+      fallbackSteps.push("venue_filter_relaxed");
       filteredCandidates = merged;
     }
   }
@@ -419,11 +431,11 @@ function recommendPapers({ query, filters, candidates, sourceStats, model }) {
   }
 
   if (filteredCandidates.length === 0 && filters.venues.length > 0) {
-    const widenedVenues = { ...filters, venues: SUPPORTED_VENUES, type: "all", tags: [] };
+    const widenedVenues = { ...filters, venues: [], type: "all", tags: [] };
     const widenedCandidates = applyHardFilters(candidates, query, widenedVenues, profile);
     if (widenedCandidates.length > 0) {
       filteredCandidates = widenedCandidates;
-      fallbackSteps.push("venues_widened");
+      fallbackSteps.push("venue_filter_removed");
       for (const paper of filteredCandidates) fallbackIds.add(paper.id);
     }
   }

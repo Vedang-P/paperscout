@@ -1,6 +1,23 @@
 import { useMemo, useState } from "react";
 
-const VENUE_OPTIONS = ["ICLR", "ECCV", "ACCV", "ICCV", "CVPR", "ACL", "EMNLP", "NAACL"];
+const VENUE_OPTIONS = [
+  "ICLR",
+  "ECCV",
+  "ACCV",
+  "ICCV",
+  "CVPR",
+  "WACV",
+  "NEURIPS",
+  "ICML",
+  "AAAI",
+  "IJCAI",
+  "WWW",
+  "KDD",
+  "ACL",
+  "EMNLP",
+  "NAACL",
+  "COLING",
+];
 const TYPE_OPTIONS = ["workshop", "conference", "journal"];
 const PAPER_TYPE_OPTIONS = [
   "preprint",
@@ -103,8 +120,8 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
   const [minYear, setMinYear] = useState(2021);
   const [maxYear, setMaxYear] = useState(currentYear);
   const [minCitations, setMinCitations] = useState(0);
-  const [limit, setLimit] = useState(24);
-  const [typeIndex, setTypeIndex] = useState(0);
+  const [limit, setLimit] = useState(40);
+  const [typeIndex, setTypeIndex] = useState(1);
 
   const [venues, setVenues] = useState(DEFAULT_VENUES);
   const [tags, setTags] = useState([]);
@@ -205,7 +222,7 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
       minCitations,
       type: TYPE_OPTIONS[typeIndex],
       limit,
-      venues,
+      venues: venues.length === VENUE_OPTIONS.length ? [] : venues,
       tags,
       paperTypes: additionalPaperTypes,
       tasks,

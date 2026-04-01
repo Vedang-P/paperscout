@@ -58,7 +58,7 @@ function mapDblpPaper(hit) {
 }
 
 async function searchDblp(query, filters) {
-  const size = Math.min(Math.max(filters.limit, 20), 100);
+  const size = Math.min(Math.max(filters.limit * 5, 100), 300);
   const response = await axios.get("https://dblp.org/search/publ/api", {
     params: {
       q: query,

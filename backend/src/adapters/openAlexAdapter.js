@@ -38,6 +38,7 @@ function mapOpenAlexPaper(work) {
       .filter(Boolean)
   );
   const venue = normalizeWhitespace(work.primary_location?.source?.display_name || "");
+  const sourceVenueType = normalizeWhitespace(work.primary_location?.source?.type || "");
   const conference = inferConference(`${venue} ${title}`);
   const isWorkshop = inferWorkshopFlag(`${venue} ${title}`);
 
@@ -65,6 +66,7 @@ function mapOpenAlexPaper(work) {
     authors,
     year: work.publication_year || null,
     venue,
+    sourceVenueType,
     source: "OpenAlex",
     sourceType: "api",
     conference,
@@ -78,19 +80,33 @@ function mapOpenAlexPaper(work) {
 }
 
 async function searchOpenAlex(query, filters) {
-  const perPage = Math.min(Math.max(filters.limit, 20), 75);
-  const encodedQuery = encodeURIComponent(query);
+  const perPage = Math.min(Math.max(filters.limit * 3, 60), 200);
+  const pageCountRaw = Number.parseInt(process.env.OPENALEX_PAGE_COUNT || "2", 10);
+  const pageCount = Math.min(3, Math.max(1, Number.isFinite(pageCountRaw) ? pageCountRaw : 2));
   const filter = `from_publication_date:${filters.minYear}-01-01,to_publication_date:${filters.maxYear}-12-31`;
-  const url = `https://api.openalex.org/works?search=${encodedQuery}&per-page=${perPage}&filter=${encodeURIComponent(filter)}&sort=relevance_score:desc`;
+  const requests = Array.from({ length: pageCount }, (_, index) =>
+    axios
+      .get("https://api.openalex.org/works", {
+        params: {
+          search: query,
+          "per-page": perPage,
+          page: index + 1,
+          filter,
+          sort: "relevance_score:desc",
+        },
+        timeout: 12000,
+        headers: {
+          "User-Agent": "PaperScout/1.0 (research paper scraper)",
+        },
+      })
+      .catch(() => null)
+  );
 
-  const response = await axios.get(url, {
-    timeout: 12000,
-    headers: {
-      "User-Agent": "PaperScout/1.0 (research paper scraper)",
-    },
-  });
+  const responses = await Promise.all(requests);
+  const works = responses.flatMap((response) =>
+    Array.isArray(response?.data?.results) ? response.data.results : []
+  );
 
-  const works = Array.isArray(response.data?.results) ? response.data.results : [];
   return works.map(mapOpenAlexPaper).filter((paper) => paper.title);
 }
 

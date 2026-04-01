@@ -39,23 +39,36 @@ function detectCodeLink(links = []) {
 
 function inferPaperTypes(paper) {
   const text = lower(`${paper.title || ""} ${paper.venue || ""} ${paper.source || ""}`);
+  const sourceVenueType = lower(paper.sourceVenueType || "");
   const types = new Set();
   const isJournal =
+    sourceVenueType.includes("journal") ||
     text.includes("journal") ||
     text.includes("transactions") ||
     text.includes("j.") ||
     text.includes("vol.");
+  const isConferenceVenueType =
+    sourceVenueType.includes("conference") ||
+    sourceVenueType.includes("proceedings");
+  const looksLikePreprint =
+    sourceVenueType.includes("repository") ||
+    text.includes("arxiv") ||
+    text.includes("preprint");
   const isWorkshop = paper.isWorkshop || inferWorkshopFlag(text);
 
   if (isWorkshop) {
     types.add("workshop");
   } else if (isJournal) {
     types.add("journal");
+  } else if (isConferenceVenueType) {
+    types.add("conference");
+  } else if (looksLikePreprint) {
+    types.add("preprint");
   } else {
     types.add("conference");
   }
 
-  if (text.includes("arxiv") || text.includes("preprint")) {
+  if (looksLikePreprint) {
     types.add("preprint");
   }
   if (text.includes("survey") || text.includes("review")) {
