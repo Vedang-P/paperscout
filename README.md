@@ -1,264 +1,215 @@
 # Sarveshu
 
-Sarveshu is a research paper discovery engine focused on NLP and CV.
+Sarveshu is a production-oriented paper discovery engine for CV + NLP, focused on workshop/conference/journal discovery from 2021 onward.
 
-This README explains the **actual system logic** step-by-step, from user input to ranked output.
+This README is logic-first: it explains exactly how requests are processed, ranked, and returned.
 
-## Core Goal
+## System Overview
 
-Given a query and filters, Sarveshu should:
+Request flow:
 
-1. Fetch papers from multiple sources.
-2. Normalize everything into one common schema.
-3. Enrich missing metadata (especially citations and tags).
-4. Rank candidates with a hybrid model.
-5. Return diverse, explainable recommendations.
+1. Frontend sends `GET /api/papers/recommend` with query + filters.
+2. Backend parses and clamps filters (`minYear`, `maxYear`, `limit`, etc.).
+3. Query is typo-normalized (fuzzy correction) before retrieval/ranking.
+   - Query can be empty if filters/tags/tasks/datasets drive intent.
+4. Multi-source retrieval runs in parallel (OpenAlex, DBLP, CVF workshop scraper).
+5. Candidates are normalized, tagged, typed, deduplicated, and citation-enriched.
+6. Hard filters are applied.
+7. Hybrid ranking + MMR diversification reranks results.
+8. Response includes ranked papers + explainability metadata.
 
-## End-to-End Pipeline
+## Core Pipeline
 
-### Step 1: Input Parsing and Safety Clamping
+### 1) Filter Parsing
 
-Entry points:
+File: `backend/src/services/filterParser.js`
 
-- Local Express routes: [backend/src/routes/papers.js](/Users/vedang/paperscout/backend/src/routes/papers.js)
-- Vercel serverless routes: [api/papers/recommend.js](/Users/vedang/paperscout/api/papers/recommend.js), [api/papers/search.js](/Users/vedang/paperscout/api/papers/search.js)
+- Clamps years to `>= 2021` and `<= current year`.
+- Clamps `limit` to `[1, 100]`.
+- Parses `venues/tags/paperTypes/tasks/datasets` as unique lists.
+- Caps list size and item length to prevent oversized payload abuse.
+- Normalizes type scope: `workshop | conference | journal | all`.
 
-Filter parsing lives in [backend/src/services/filterParser.js](/Users/vedang/paperscout/backend/src/services/filterParser.js).
+### 2) Typo Tolerance + Query Normalization
 
-What happens here:
+Files:
 
-1. Parse raw query params.
-2. Clamp years so `minYear >= 2021` and `maxYear <= current year`.
-3. Clamp `limit` to `[1, 100]`.
-4. Normalize list filters (`venues`, `tags`, `paperTypes`, `tasks`, `datasets`) into lowercase/unique arrays.
-5. Parse `hasCode` into `true | false | null`.
-6. Parse model controls (`diversity`, preferred/excluded authors, seed titles, keywords).
-
-Why this step matters:
-
-- Prevents invalid requests from breaking later stages.
-- Enforces project policy (no pre-2021 papers).
-- Gives every downstream module a clean, typed filter object.
-
-### Step 2: Query Construction
-
-Query builder: [backend/src/services/paperSearch.js](/Users/vedang/paperscout/backend/src/services/paperSearch.js)
-
-If user query `q` is empty, system composes a fallback query from:
-
-- tags
-- tasks
-- datasets
-- paperTypes
-- model keywords/seed titles/preferred authors
-
-This prevents dead requests and still allows recommendation by intent filters.
-
-### Step 3: Parallel Source Retrieval
-
-Candidate gathering: [backend/src/services/candidateAggregator.js](/Users/vedang/paperscout/backend/src/services/candidateAggregator.js)
-
-Adapters:
-
-- OpenAlex: [backend/src/adapters/openAlexAdapter.js](/Users/vedang/paperscout/backend/src/adapters/openAlexAdapter.js)
-- DBLP: [backend/src/adapters/dblpAdapter.js](/Users/vedang/paperscout/backend/src/adapters/dblpAdapter.js)
-- CVF workshop scraper: [backend/src/adapters/cvfWorkshopAdapter.js](/Users/vedang/paperscout/backend/src/adapters/cvfWorkshopAdapter.js)
+- `backend/src/services/fuzzyQuery.js`
+- `backend/src/utils/text.js`
+- `backend/src/services/vectorSpace.js`
 
 Behavior:
 
-1. Sources are queried in parallel.
-2. Each adapter maps raw provider fields into the shared paper shape.
-3. Adapter failures are isolated (`catch -> []`) so one broken source does not collapse the whole response.
+- Query tokens are typo-corrected using bounded Levenshtein against domain vocabulary (venues, tags, tasks, datasets, paper types, core terms).
+- Retrieval query uses both original + corrected query when correction is applied.
+- Lexical scoring gives partial credit for fuzzy token matches.
+- Response metadata includes:
+  - `meta.queryNormalization`
+  - `meta.sourceQuery`
 
-### Step 4: Normalization, Typing, and Metadata Enrichment
+### 3) Source Retrieval
 
-Classifier: [backend/src/services/paperClassifier.js](/Users/vedang/paperscout/backend/src/services/paperClassifier.js)
+Files:
 
-For every raw paper:
+- `backend/src/adapters/openAlexAdapter.js`
+- `backend/src/adapters/dblpAdapter.js`
+- `backend/src/adapters/cvfWorkshopAdapter.js`
+- `backend/src/services/candidateAggregator.js`
 
-1. Normalize text fields (`title`, `abstract`).
-2. Build unified `links` array from URL/PDF/provider links.
-3. Detect code links (`github.com` / `gitlab.com`) and set:
-   - `hasCode`
-   - `codeUrl`
-4. Infer paper types (`workshop`, `conference`, `journal`, `preprint`, `survey`, `demo`, `dataset`, `benchmark`) from venue/title/source patterns.
-5. Infer task labels and dataset labels by keyword pattern matching.
+Behavior:
 
-Tag inference from NLP/CV keywords is done via [backend/src/services/tagger.js](/Users/vedang/paperscout/backend/src/services/tagger.js), then merged into each paper.
+- All sources queried in parallel.
+- Adapter failures are isolated (single source failure does not crash the request).
+- Candidate-level cache added for hot queries to reduce provider load and improve latency.
+- If providers temporarily fail, stale cached candidates are reused for the same query/filter key.
 
-### Step 5: Deduplication and Merge
+### 4) Normalization + Enrichment
 
-Dedup logic: [backend/src/services/candidateAggregator.js](/Users/vedang/paperscout/backend/src/services/candidateAggregator.js)
+Files:
 
-Fingerprints are built from:
+- `backend/src/services/paperClassifier.js`
+- `backend/src/services/tagger.js`
+- `backend/src/services/citationEnricher.js`
+
+Behavior:
+
+- Infers `paperTypes`, `tasks`, `datasets`, `hasCode`, `codeUrl`.
+- Merges tags with inferred metadata.
+- Enriches missing citation counts via OpenAlex (cached).
+
+### 5) Deduplication
+
+File: `backend/src/services/candidateAggregator.js`
+
+Dedup keys:
 
 - DOI
 - PDF URL
-- URL
+- canonical URL
 - normalized title key
 
-When duplicates are found:
+Merge policy preserves richer metadata and stronger source signal.
 
-1. Keep best text fields (prefer richer abstract/title).
-2. Merge authors and links uniquely.
-3. Preserve strongest source signal.
-4. Keep max citation count observed.
+### 6) Hard Filters + Ranking
 
-Result: one canonical record per paper instead of multiple provider copies.
+File: `backend/src/services/recommendationModel.js`
 
-### Step 6: Citation Enrichment
+Hard filters:
 
-Citation enrichment: [backend/src/services/citationEnricher.js](/Users/vedang/paperscout/backend/src/services/citationEnricher.js)
+- year/citation/type/venue/tags/paperTypes/tasks/datasets/hasCode
+- excluded tags/authors
 
-If citation data is missing/low quality, the system enriches via OpenAlex lookups (cached) for a subset of candidates.
+Scoring signals:
 
-This reduces ranking noise from missing citation metadata.
+- semantic relevance (TF-IDF cosine)
+- lexical/fuzzy token coverage
+- citation strength + citation velocity
+- recency
+- tag/type/task/dataset match
+- venue priors
+- author preference
+- workshop/code/meta/source quality
 
-### Step 7: Hard Filtering
+Then MMR reranking increases diversity.
 
-Hard filter phase in [backend/src/services/recommendationModel.js](/Users/vedang/paperscout/backend/src/services/recommendationModel.js) (`applyHardFilters`).
+### 7) Fallback Strategy
 
-Rules include:
+File: `backend/src/services/recommendationModel.js`
 
-- year bounds
-- citation bounds
-- `type` (`workshop | conference | all`)
-- venue whitelist
-- tag matching
-- paper type matching
-- task matching
-- dataset matching
-- `hasCode` matching
-- excluded tags
-- disliked authors
+If strict filters over-constrain results, relaxation steps run progressively and are reported in `meta.fallback.steps`.
 
-Only papers passing all hard constraints move to scoring.
-
-### Step 8: Hybrid Feature Scoring
-
-Scoring happens in `rankCandidates` within [backend/src/services/recommendationModel.js](/Users/vedang/paperscout/backend/src/services/recommendationModel.js).
-
-Feature families used:
-
-1. Semantic relevance (TF-IDF cosine similarity)
-2. Lexical overlap (token coverage)
-3. Citation strength (`log1p(citations)` normalized)
-4. Citation velocity (citations per age)
-5. Recency score
-6. Tag match score
-7. Paper type score
-8. Task score
-9. Dataset score
-10. Venue prior and preference boost
-11. Preferred-author boost
-12. Workshop preference signal
-13. Code availability score
-14. Metadata completeness score
-15. Source reliability prior
-
-All features are weighted into a final ranking score.
-
-### Step 9: Fallback Relaxation Strategy
-
-If strict filters produce zero/low results, system applies staged relaxations (recorded in `meta.fallback.steps`):
-
-1. Relax tag matching mode (`all -> any`)
-2. Relax workshop-only constraint to `all` when too sparse
-3. Relax code filter
-4. Relax paper types
-5. Relax tasks
-6. Relax datasets
-7. Relax tags entirely
-8. Widen venues
-9. Relax citation threshold
-10. Final global relaxation (`all_strict_filters_relaxed`) if still empty
-
-Goal: avoid empty response when there are relevant papers available.
-
-### Step 10: Diversity Re-Ranking (MMR)
-
-After score sort, Maximal Marginal Relevance reranking runs (`rerankWithMMR`) to avoid near-duplicate results.
-
-- Uses cosine similarity between paper vectors.
-- Controlled by `diversity` parameter.
-
-### Step 11: Explainable Output Assembly
-
-Final output includes:
-
-- ranked papers
-- per-paper recommendation score
-- per-paper reason chips (for example: semantic relevance, citation profile, venue, linked implementation)
-- meta diagnostics:
-  - `totalBeforeFilter`
-  - `totalAfterFilter`
-  - `sourceStats`
-  - `fallback.steps`
-  - `availableFilters`
-
-This enables transparent debugging and better UI explanations.
-
-## Auxiliary Subsystems
-
-### Deadlines Engine
+## Deadlines Engine
 
 Files:
 
-- [backend/src/services/deadlinesService.js](/Users/vedang/paperscout/backend/src/services/deadlinesService.js)
-- [backend/src/routes/deadlines.js](/Users/vedang/paperscout/backend/src/routes/deadlines.js)
-- [api/deadlines.js](/Users/vedang/paperscout/api/deadlines.js)
+- `backend/src/services/deadlinesService.js`
+- `api/deadlines.js`
 
-Logic:
+Rules:
 
-1. Pull conference/workshop feed.
-2. Normalize timezone/deadline parsing.
-3. Compute `daysRemaining` and `isOpen`.
-4. Rank: open first, then nearest deadline first.
-5. If feed is stale, inject estimated upcoming major deadlines (explicitly marked `isEstimated`).
+- Uses only verified official sources (no estimated deadlines).
+- Ranking: open first, then closest due date.
+- If open set is empty, API returns nearest verified closed deadlines with fallback metadata (`fallback.mode = closed_only`) instead of an empty panel.
+- If fresh deadline fetch fails, the service can reuse stale verified cache rather than returning an empty state.
 
-### Notes Store
+## Notes Engine (No Auth)
 
 Files:
 
-- [backend/src/services/notesStore.js](/Users/vedang/paperscout/backend/src/services/notesStore.js)
-- [backend/src/routes/notes.js](/Users/vedang/paperscout/backend/src/routes/notes.js)
-- [api/notes.js](/Users/vedang/paperscout/api/notes.js)
+- `backend/src/services/notesStore.js`
+- `api/notes.js`
 
-Logic:
+Behavior:
 
-1. `GET /api/notes?userName=...` -> list notes.
-2. `POST /api/notes` -> create note with UUID and timestamp.
-3. `DELETE /api/notes` -> remove by ID.
-4. Storage backend:
-   - Vercel KV (if `KV_REST_API_URL` + `KV_REST_API_TOKEN` are set)
-   - in-memory fallback otherwise
+- Per-userName scoped notes.
+- Upsert-on-title behavior (same title updates existing note).
+- Input normalization + size limits for title/remark/url.
+- Supports Vercel KV via REST command calls (if configured); otherwise memory fallback.
+- Frontend also keeps local-device fallback for resilience when API is unavailable.
 
-## Quick Local Run
+## API Surface
+
+- `GET /api/papers/health`
+- `GET /api/papers/search`
+- `GET /api/papers/recommend`
+- `GET /api/deadlines`
+- `GET/POST/DELETE /api/notes`
+
+## Environment Variables
+
+### Backend runtime
+
+- `PORT` (default `5000`)
+- `BODY_LIMIT` (default `256kb`)
+- `CORS_ORIGIN` (optional comma-separated allowlist)
+
+### Optional persistence (recommended for production)
+
+- `KV_REST_API_URL`
+- `KV_REST_API_TOKEN`
+
+## Local Development
+
+### Backend
 
 ```bash
-# terminal 1
 cd backend
 npm install
 npm run dev
+```
 
-# terminal 2
+### Frontend
+
+```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-## Repository Structure
+## Production Build Checks
 
-```text
-paperscout/
-├─ frontend/                    # React client
-├─ backend/                     # Express API (local runtime)
-├─ api/                         # Vercel serverless functions
-└─ vercel.json                  # Vercel build/runtime config
+```bash
+cd frontend && npm run build
 ```
+
+## Deployment (Vercel)
+
+- API uses `api/**/*.js` serverless handlers.
+- Frontend built from `frontend/` Vite output.
+- `vercel.json` sets Node runtime + max duration for API functions and baseline security headers.
+
+## Production Hardening Included
+
+- Request body size limit
+- Optional strict CORS allowlist
+- Basic security headers
+- Improved API timeout/error handling on frontend client
+- Query typo tolerance
+- Candidate caching
+- Removal of dead frontend assets and redundant API utility code paths
 
 ## Maintainer
 
 Made by Vedang.
 
-Repository: [https://github.com/Vedang-P/paperscout](https://github.com/Vedang-P/paperscout)
+Repo: <https://github.com/Vedang-P/paperscout>

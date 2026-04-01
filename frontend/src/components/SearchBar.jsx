@@ -216,11 +216,18 @@ export default function SearchBar({ onSearch, suggestedTags = [], availableFilte
 
   const runSearch = (queryText) => {
     const normalizedQuery = String(queryText || "").trim();
-    if (!normalizedQuery) return;
+    const filters = buildFilters();
+    const hasRecommendationInput =
+      Boolean(normalizedQuery) ||
+      filters.tags.length > 0 ||
+      filters.tasks.length > 0 ||
+      filters.datasets.length > 0 ||
+      filters.paperTypes.length > 0;
+    if (!hasRecommendationInput) return;
 
     onSearch({
       query: normalizedQuery,
-      filters: buildFilters(),
+      filters,
     });
   };
 

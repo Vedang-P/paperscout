@@ -110,7 +110,10 @@ export default function NotesPanel() {
 
   useEffect(() => {
     const normalized = normalizeValue(userName);
-    loadNotes(normalized);
+    const timeoutId = setTimeout(() => {
+      loadNotes(normalized);
+    }, 250);
+    return () => clearTimeout(timeoutId);
   }, [userName]);
 
   const handleSave = async (event) => {
@@ -150,7 +153,7 @@ export default function NotesPanel() {
       setPaperTitle("");
       setPaperUrl("");
       setRemark("");
-    } catch (err) {
+    } catch {
       const fallbackNote = {
         id: `local-${Date.now()}`,
         userName: normalizedUserName,

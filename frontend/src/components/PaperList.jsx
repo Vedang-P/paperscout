@@ -104,6 +104,11 @@ function toReadingList(papers, query) {
 }
 
 export default function PaperList({ papers, loading, error, query, meta, filters }) {
+  const normalizedQuery = String(query || "").trim();
+  const resultLabel = normalizedQuery
+    ? `for "${normalizedQuery}"`
+    : "for selected filters";
+
   if (loading) {
     return (
       <div className="paper-list">
@@ -139,7 +144,7 @@ export default function PaperList({ papers, loading, error, query, meta, filters
       <div className="paper-list__top">
         <div>
           <p className="paper-list__count">
-            {papers.length} result{papers.length !== 1 ? "s" : ""} for &ldquo;{query}&rdquo;
+            {papers.length} result{papers.length !== 1 ? "s" : ""} {resultLabel}
           </p>
           {filters ? (
             <p className="paper-list__filters">
@@ -151,6 +156,11 @@ export default function PaperList({ papers, loading, error, query, meta, filters
           ) : null}
           {meta?.fallback?.steps?.length > 0 ? (
             <p className="paper-list__sources">fallback used: {meta.fallback.steps.join(" · ")}</p>
+          ) : null}
+          {meta?.queryNormalization?.usedFuzzyCorrection ? (
+            <p className="paper-list__sources">
+              interpreted query: {meta.queryNormalization.correctedQuery}
+            </p>
           ) : null}
         </div>
 
@@ -172,7 +182,7 @@ export default function PaperList({ papers, loading, error, query, meta, filters
             onClick={() =>
               downloadText(
                 "sarveshu-reading-list.md",
-                toReadingList(papers, query),
+                toReadingList(papers, normalizedQuery || "filters-only"),
                 "text/markdown"
               )
             }

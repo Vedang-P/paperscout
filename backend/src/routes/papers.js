@@ -1,16 +1,16 @@
 const express = require("express");
 const { parseSearchFilters } = require("../services/filterParser");
 const { searchPapersAcrossSources, recommendPapersAcrossSources } = require("../services/paperSearch");
+const { normalizeQueryParam } = require("../../../shared/http");
 
 const router = express.Router();
 
-function normalizeQueryParam(value) {
-  if (Array.isArray(value)) return value[0] || "";
-  return value || "";
-}
-
 router.get("/health", (req, res) => {
-  res.json({ status: "ok" });
+  res.json({
+    status: "ok",
+    service: "sarveshu-api",
+    time: new Date().toISOString(),
+  });
 });
 
 router.get("/search", async (req, res) => {
@@ -42,10 +42,16 @@ router.get("/search", async (req, res) => {
 router.get("/recommend", async (req, res) => {
   const q = normalizeQueryParam(req.query?.q);
   const filters = parseSearchFilters(req.query);
+  const hasRecommendationInput =
+    Boolean(q) ||
+    filters.tags.length > 0 ||
+    filters.tasks.length > 0 ||
+    filters.datasets.length > 0 ||
+    filters.paperTypes.length > 0;
 
-  if (!q && filters.tags.length === 0) {
+  if (!hasRecommendationInput) {
     return res.status(400).json({
-      error: "Provide q or tags for recommendations.",
+      error: "Provide q, tags, tasks, datasets, or paperTypes for recommendations.",
     });
   }
 

@@ -1,17 +1,10 @@
 const { parseSearchFilters } = require("../../backend/src/services/filterParser");
 const { searchPapersAcrossSources } = require("../../backend/src/services/paperSearch");
-
-function normalizeQueryParam(value) {
-  if (Array.isArray(value)) {
-    return value[0] || "";
-  }
-  return value || "";
-}
+const { methodNotAllowed, normalizeQueryParam } = require("../../shared/http");
 
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
-    res.setHeader("Allow", "GET");
-    return res.status(405).json({ error: "Method Not Allowed" });
+    return methodNotAllowed(req, res, ["GET"]);
   }
 
   const q = normalizeQueryParam(req.query?.q);

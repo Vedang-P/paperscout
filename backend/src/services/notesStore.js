@@ -6,8 +6,34 @@ if (!global.__SARVESHU_NOTES_STORE__) {
   global.__SARVESHU_NOTES_STORE__ = memoryStore;
 }
 
+const MAX_USER_NAME_LENGTH = 80;
+const MAX_PAPER_TITLE_LENGTH = 300;
+const MAX_REMARK_LENGTH = 4000;
+const MAX_PAPER_URL_LENGTH = 1200;
+const MAX_PAPER_ID_LENGTH = 200;
+const MAX_NOTES_PER_USER = 500;
+
 function normalizeUserName(userName) {
-  return normalizeWhitespace(userName || "").slice(0, 80);
+  return normalizeWhitespace(userName || "").slice(0, MAX_USER_NAME_LENGTH);
+}
+
+function normalizeLimitedText(value, maxLength) {
+  return normalizeWhitespace(value || "").slice(0, maxLength);
+}
+
+function normalizeUrl(value) {
+  const normalized = normalizeLimitedText(value, MAX_PAPER_URL_LENGTH);
+  if (!normalized) return "";
+
+  try {
+    return new URL(normalized).toString();
+  } catch {
+    try {
+      return new URL(`https://${normalized}`).toString();
+    } catch {
+      return "";
+    }
+  }
 }
 
 function userKey(userName) {
@@ -32,29 +58,37 @@ function hasKvConfig() {
   return Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
 }
 
-async function kvGet(key) {
-  const url = `${process.env.KV_REST_API_URL}/get/${encodeURIComponent(key)}`;
-  const response = await fetch(url, {
-    method: "GET",
+async function kvCommand(command) {
+  const response = await fetch(process.env.KV_REST_API_URL, {
+    method: "POST",
     headers: {
       Authorization: `Bearer ${process.env.KV_REST_API_TOKEN}`,
+      "Content-Type": "application/json",
     },
+    body: JSON.stringify(command),
   });
-  if (!response.ok) return null;
-  const payload = await response.json();
-  return payload?.result || null;
+  if (!response.ok) {
+    throw new Error(`kv_command_failed:${response.status}`);
+  }
+  return response.json();
+}
+
+async function kvGet(key) {
+  try {
+    const payload = await kvCommand(["GET", key]);
+    return { ok: true, value: payload?.result ?? null };
+  } catch {
+    return { ok: false, value: null };
+  }
 }
 
 async function kvSet(key, value) {
-  const url = `${process.env.KV_REST_API_URL}/set/${encodeURIComponent(
-    key
-  )}/${encodeURIComponent(value)}`;
-  await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${process.env.KV_REST_API_TOKEN}`,
-    },
-  });
+  try {
+    await kvCommand(["SET", key, value]);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function readNotes(userName) {
@@ -62,9 +96,11 @@ async function readNotes(userName) {
   if (!key) return [];
 
   if (hasKvConfig()) {
-    const raw = await kvGet(key);
-    const parsed = parseJson(raw, []);
-    return Array.isArray(parsed) ? parsed : [];
+    const kv = await kvGet(key);
+    if (kv.ok) {
+      const parsed = parseJson(kv.value, []);
+      return Array.isArray(parsed) ? parsed : [];
+    }
   }
 
   const local = memoryStore.get(key);
@@ -76,8 +112,8 @@ async function writeNotes(userName, notes) {
   if (!key) return;
 
   if (hasKvConfig()) {
-    await kvSet(key, JSON.stringify(notes));
-    return;
+    const stored = await kvSet(key, JSON.stringify(notes));
+    if (stored) return;
   }
 
   memoryStore.set(key, notes);
@@ -107,15 +143,15 @@ async function createNote(payload = {}) {
     throw new Error("userName is required");
   }
 
-  const paperTitle = normalizeWhitespace(payload.paperTitle || "");
+  const paperTitle = normalizeLimitedText(payload.paperTitle || "", MAX_PAPER_TITLE_LENGTH);
   if (!paperTitle) {
     throw new Error("paperTitle is required");
   }
 
   const notes = await readNotes(userName);
-  const remark = normalizeWhitespace(payload.remark || "");
-  const paperId = normalizeWhitespace(payload.paperId || "");
-  const paperUrl = normalizeWhitespace(payload.paperUrl || "");
+  const remark = normalizeLimitedText(payload.remark || "", MAX_REMARK_LENGTH);
+  const paperId = normalizeLimitedText(payload.paperId || "", MAX_PAPER_ID_LENGTH);
+  const paperUrl = normalizeUrl(payload.paperUrl || "");
   const now = nowIso();
   const titleKey = lower(paperTitle);
 
@@ -146,6 +182,14 @@ async function createNote(payload = {}) {
     updatedAt: now,
   };
   notes.push(note);
+  if (notes.length > MAX_NOTES_PER_USER) {
+    notes.sort((a, b) =>
+      String(b.updatedAt || b.createdAt || "").localeCompare(
+        String(a.updatedAt || a.createdAt || "")
+      )
+    );
+    notes.length = MAX_NOTES_PER_USER;
+  }
   await writeNotes(userName, notes);
 
   return note;

@@ -1,6 +1,7 @@
 const { searchCvfWorkshops } = require("../adapters/cvfWorkshopAdapter");
 const { searchDblp } = require("../adapters/dblpAdapter");
 const { searchOpenAlex } = require("../adapters/openAlexAdapter");
+const { getCache, getStaleCache, setCache } = require("../utils/cache");
 const { enrichCitationCounts } = require("./citationEnricher");
 const { classifyPaper } = require("./paperClassifier");
 const { inferTags } = require("./tagger");
@@ -11,6 +12,7 @@ const SOURCE_NAME = {
   dblp: "DBLP",
   cvf: "CVF Open Access",
 };
+const CANDIDATE_CACHE_TTL_MS = 5 * 60 * 1000;
 
 function makeTitleKey(title) {
   return lower(title).replace(/[^a-z0-9]/g, "");
@@ -98,6 +100,19 @@ function makeSourceStats(rawResults, mergedResults) {
 }
 
 async function gatherCandidates(query, filters) {
+  const cacheKey = `candidates:v1:${lower(query)}:${JSON.stringify({
+    minYear: filters.minYear,
+    maxYear: filters.maxYear,
+    minCitations: filters.minCitations,
+    limit: filters.limit,
+    type: filters.type,
+    venues: [...(filters.venues || [])].sort(),
+    hasCode: filters.hasCode,
+  })}`;
+  const cached = getCache(cacheKey);
+  if (cached) return cached;
+  const staleCached = getStaleCache(cacheKey);
+
   const sourceTasks = {
     openalex: () => searchOpenAlex(query, filters),
     dblp: () => searchDblp(query, filters),
@@ -139,10 +154,20 @@ async function gatherCandidates(query, filters) {
   const deduped = dedupePapers(tagged);
   await enrichCitationCounts(deduped, filters.minCitations > 0 ? 60 : 24);
 
-  return {
+  if (deduped.length === 0 && staleCached) {
+    return staleCached;
+  }
+
+  const payload = {
     candidates: deduped,
     sourceStats: makeSourceStats(raw, deduped),
   };
+  setCache(
+    cacheKey,
+    payload,
+    deduped.length > 0 ? CANDIDATE_CACHE_TTL_MS : 60 * 1000
+  );
+  return payload;
 }
 
 module.exports = { gatherCandidates };

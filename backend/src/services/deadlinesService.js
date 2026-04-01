@@ -1,6 +1,6 @@
 const axios = require("axios");
 const { load } = require("cheerio");
-const { getCache, setCache } = require("../utils/cache");
+const { getCache, getStaleCache, setCache } = require("../utils/cache");
 const { normalizeWhitespace } = require("../utils/text");
 
 const CACHE_KEY = "deadlines:verified:v2";
@@ -287,6 +287,7 @@ function sortEvents(a, b) {
 async function loadVerifiedDeadlines() {
   const cached = getCache(CACHE_KEY);
   if (cached) return cached;
+  const staleCached = getStaleCache(CACHE_KEY);
 
   const now = new Date();
   const events = [];
@@ -304,7 +305,16 @@ async function loadVerifiedDeadlines() {
     })
   );
 
-  setCache(CACHE_KEY, events, CACHE_TTL_MS);
+  if (events.length > 0) {
+    setCache(CACHE_KEY, events, CACHE_TTL_MS);
+    return events;
+  }
+
+  if (staleCached && Array.isArray(staleCached)) {
+    return staleCached;
+  }
+
+  setCache(CACHE_KEY, events, Math.min(CACHE_TTL_MS, 10 * 60 * 1000));
   return events;
 }
 

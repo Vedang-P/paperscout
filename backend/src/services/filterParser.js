@@ -9,6 +9,8 @@ const {
   SUPPORTED_PAPER_TYPES,
 } = require("../config/searchConfig");
 const { parseCsvParam, parseNumber, parseYear, toUniqueList } = require("../utils/text");
+const MAX_FILTER_ITEMS = 25;
+const MAX_FILTER_ITEM_LENGTH = 64;
 
 function clamp(number, min, max) {
   return Math.min(Math.max(number, min), max);
@@ -20,6 +22,13 @@ function normalizeType(value) {
   if (type === "journal") return "journal";
   if (type === "conference") return "conference";
   return "workshop";
+}
+
+function clampList(values, maxItems = MAX_FILTER_ITEMS) {
+  return values
+    .map((item) => String(item || "").trim().slice(0, MAX_FILTER_ITEM_LENGTH))
+    .filter(Boolean)
+    .slice(0, maxItems);
 }
 
 function parseSearchFilters(queryParams = {}) {
@@ -44,16 +53,20 @@ function parseSearchFilters(queryParams = {}) {
     rawMaxCitations === null ? null : Math.max(minCitations, Math.floor(rawMaxCitations));
   const limit = clamp(Math.floor(rawLimit), 1, MAX_LIMIT);
 
-  const venues = toUniqueList(parseCsvParam(queryParams.venues)).map((v) => v.toUpperCase());
-  const tags = toUniqueList(parseCsvParam(queryParams.tags)).map((tag) => tag.toLowerCase());
-  const paperTypesRaw = toUniqueList(parseCsvParam(queryParams.paperTypes)).map((value) =>
+  const venues = clampList(toUniqueList(parseCsvParam(queryParams.venues))).map((v) =>
+    v.toUpperCase()
+  );
+  const tags = clampList(toUniqueList(parseCsvParam(queryParams.tags))).map((tag) =>
+    tag.toLowerCase()
+  );
+  const paperTypesRaw = clampList(toUniqueList(parseCsvParam(queryParams.paperTypes))).map((value) =>
     String(value).toLowerCase()
   );
   const paperTypes = paperTypesRaw.filter((value) => SUPPORTED_PAPER_TYPES.includes(value));
-  const tasks = toUniqueList(parseCsvParam(queryParams.tasks)).map((value) =>
+  const tasks = clampList(toUniqueList(parseCsvParam(queryParams.tasks))).map((value) =>
     String(value).toLowerCase()
   );
-  const datasets = toUniqueList(parseCsvParam(queryParams.datasets)).map((value) =>
+  const datasets = clampList(toUniqueList(parseCsvParam(queryParams.datasets))).map((value) =>
     String(value).toLowerCase()
   );
 

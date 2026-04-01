@@ -4,22 +4,25 @@ const {
 const {
   recommendPapersAcrossSources,
 } = require("../../backend/src/services/paperSearch");
-
-function normalizeQueryParam(value) {
-  if (Array.isArray(value)) return value[0] || "";
-  return value || "";
-}
+const { methodNotAllowed, normalizeQueryParam } = require("../../shared/http");
 
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
-    res.setHeader("Allow", "GET");
-    return res.status(405).json({ error: "Method Not Allowed" });
+    return methodNotAllowed(req, res, ["GET"]);
   }
 
   const q = normalizeQueryParam(req.query?.q);
   const filters = parseSearchFilters(req.query || {});
-  if (!q && filters.tags.length === 0) {
-    return res.status(400).json({ error: "Provide q or tags for recommendations." });
+  const hasRecommendationInput =
+    Boolean(q) ||
+    filters.tags.length > 0 ||
+    filters.tasks.length > 0 ||
+    filters.datasets.length > 0 ||
+    filters.paperTypes.length > 0;
+  if (!hasRecommendationInput) {
+    return res.status(400).json({
+      error: "Provide q, tags, tasks, datasets, or paperTypes for recommendations.",
+    });
   }
 
   try {

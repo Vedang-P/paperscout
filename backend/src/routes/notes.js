@@ -1,11 +1,12 @@
 const express = require("express");
 const { createNote, listNotes, removeNote } = require("../services/notesStore");
+const { normalizeQueryParam } = require("../../../shared/http");
 
 const router = express.Router();
 
 router.get("/", async (req, res) => {
   try {
-    const userName = String(req.query?.userName || "");
+    const userName = String(normalizeQueryParam(req.query?.userName) || "");
     const payload = await listNotes(userName);
     return res.json(payload);
   } catch (error) {

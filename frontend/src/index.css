@@ -198,15 +198,6 @@ textarea {
   font-weight: 600;
 }
 
-.header__subtitle {
-  margin: 4px 0 0;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.13em;
-  color: var(--muted);
-}
-
 .search-shell {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -1016,11 +1007,6 @@ input[type="range"]::-moz-range-thumb {
   .header {
     margin: 0 0 12px;
     padding: 0 2px 10px;
-  }
-
-  .header__subtitle {
-    font-size: 0.62rem;
-    letter-spacing: 0.1em;
   }
 
   .search-shell,

@@ -1,15 +1,20 @@
 const { getActiveDeadlines } = require("../backend/src/services/deadlinesService");
+const {
+  methodNotAllowed,
+  parseBoolean,
+  parseInteger,
+  normalizeQueryParam,
+} = require("../shared/http");
 
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
-    res.setHeader("Allow", "GET");
-    return res.status(405).json({ error: "Method Not Allowed" });
+    return methodNotAllowed(req, res, ["GET"]);
   }
 
   try {
-    const limit = Number(req.query?.limit || 12);
-    const includeClosed = String(req.query?.includeClosed || "").toLowerCase() === "true";
-    const eventType = String(req.query?.eventType || "all");
+    const limit = parseInteger(req.query?.limit, 12, 1, 40);
+    const includeClosed = parseBoolean(req.query?.includeClosed, false);
+    const eventType = String(normalizeQueryParam(req.query?.eventType) || "all");
     const data = await getActiveDeadlines({ limit, includeClosed, eventType });
     return res.status(200).json(data);
   } catch (error) {

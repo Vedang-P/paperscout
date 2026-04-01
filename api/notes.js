@@ -3,23 +3,12 @@ const {
   listNotes,
   removeNote,
 } = require("../backend/src/services/notesStore");
-
-function parseBody(req) {
-  if (!req.body) return {};
-  if (typeof req.body === "string") {
-    try {
-      return JSON.parse(req.body);
-    } catch {
-      return {};
-    }
-  }
-  return req.body;
-}
+const { methodNotAllowed, normalizeQueryParam, parseBody } = require("../shared/http");
 
 module.exports = async function handler(req, res) {
   if (req.method === "GET") {
     try {
-      const userName = String(req.query?.userName || "");
+      const userName = String(normalizeQueryParam(req.query?.userName) || "");
       const payload = await listNotes(userName);
       return res.status(200).json(payload);
     } catch {
@@ -49,6 +38,5 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  res.setHeader("Allow", "GET, POST, DELETE");
-  return res.status(405).json({ error: "Method Not Allowed" });
+  return methodNotAllowed(req, res, ["GET", "POST", "DELETE"]);
 };

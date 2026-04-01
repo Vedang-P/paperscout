@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import "./App.css";
 import Header from "./components/Header";
 import SearchBar from "./components/SearchBar";
 import PaperList from "./components/PaperList";
@@ -60,14 +59,22 @@ function App() {
   }, [loadDeadlines]);
 
   const handleSearch = async ({ query: searchQuery, filters }) => {
-    if (!searchQuery || !searchQuery.trim()) return;
-    setQuery(searchQuery.trim());
+    const normalizedQuery = String(searchQuery || "").trim();
+    const hasRecommendationInput =
+      Boolean(normalizedQuery) ||
+      (filters?.tags?.length || 0) > 0 ||
+      (filters?.tasks?.length || 0) > 0 ||
+      (filters?.datasets?.length || 0) > 0 ||
+      (filters?.paperTypes?.length || 0) > 0;
+    if (!hasRecommendationInput) return;
+
+    setQuery(normalizedQuery);
     setLoading(true);
     setError(null);
     setHasSearched(true);
     setActiveFilters(filters);
     try {
-      const data = await searchPapers({ query: searchQuery.trim(), filters });
+      const data = await searchPapers({ query: normalizedQuery, filters });
       setPapers(data.results || []);
       setMeta(data.meta || null);
     } catch (err) {
