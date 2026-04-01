@@ -344,6 +344,7 @@ function recommendPapers({ query, filters, candidates, sourceStats, model }) {
   const fallbackIds = new Set();
   const fallbackSteps = [];
   const lowResultThreshold = Math.max(10, Math.floor(filters.limit * 0.4));
+  const keepStrictWorkshopType = filters.type === "workshop";
 
   if (filteredCandidates.length === 0 && filters.tags.length > 0) {
     const relaxedByTagMode = applyHardFilters(
@@ -359,7 +360,11 @@ function recommendPapers({ query, filters, candidates, sourceStats, model }) {
     }
   }
 
-  if (filters.type !== "all" && filteredCandidates.length < Math.max(4, Math.floor(filters.limit * 0.35))) {
+  if (
+    !keepStrictWorkshopType &&
+    filters.type !== "all" &&
+    filteredCandidates.length < Math.max(4, Math.floor(filters.limit * 0.35))
+  ) {
     const relaxedType = { ...filters, type: "all" };
     const relaxedCandidates = applyHardFilters(candidates, query, relaxedType, profile);
     const merged = mergeById(filteredCandidates, relaxedCandidates);
@@ -371,7 +376,11 @@ function recommendPapers({ query, filters, candidates, sourceStats, model }) {
   }
 
   if (filters.venues.length > 0 && filteredCandidates.length < lowResultThreshold) {
-    const relaxedVenueFilter = { ...filters, venues: [], type: "all" };
+    const relaxedVenueFilter = {
+      ...filters,
+      venues: [],
+      type: keepStrictWorkshopType ? "workshop" : "all",
+    };
     const relaxedCandidates = applyHardFilters(candidates, query, relaxedVenueFilter, profile);
     const merged = mergeById(filteredCandidates, relaxedCandidates);
     markNewFallbackIds(filteredCandidates, merged, fallbackIds);
@@ -432,7 +441,12 @@ function recommendPapers({ query, filters, candidates, sourceStats, model }) {
   }
 
   if (filteredCandidates.length === 0 && filters.venues.length > 0) {
-    const widenedVenues = { ...filters, venues: [], type: "all", tags: [] };
+    const widenedVenues = {
+      ...filters,
+      venues: [],
+      type: keepStrictWorkshopType ? "workshop" : "all",
+      tags: [],
+    };
     const widenedCandidates = applyHardFilters(candidates, query, widenedVenues, profile);
     if (widenedCandidates.length > 0) {
       filteredCandidates = widenedCandidates;
@@ -445,8 +459,8 @@ function recommendPapers({ query, filters, candidates, sourceStats, model }) {
     const relaxedCitations = {
       ...filters,
       minCitations: 0,
-      type: "all",
-      venues: SUPPORTED_VENUES,
+      type: keepStrictWorkshopType ? "workshop" : "all",
+      venues: keepStrictWorkshopType ? [] : SUPPORTED_VENUES,
       tags: [],
     };
     const relaxedCandidates = applyHardFilters(candidates, query, relaxedCitations, profile);
@@ -462,8 +476,8 @@ function recommendPapers({ query, filters, candidates, sourceStats, model }) {
       ...filters,
       minCitations: 0,
       maxCitations: null,
-      type: "all",
-      venues: SUPPORTED_VENUES,
+      type: keepStrictWorkshopType ? "workshop" : "all",
+      venues: keepStrictWorkshopType ? [] : SUPPORTED_VENUES,
       tags: [],
       paperTypes: [],
       tasks: [],
