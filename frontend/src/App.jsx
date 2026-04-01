@@ -49,12 +49,13 @@ function App() {
   const [deadlinesLoading, setDeadlinesLoading] = useState(false);
   const [deadlinesError, setDeadlinesError] = useState(null);
   const [deadlinesUpdatedAt, setDeadlinesUpdatedAt] = useState(null);
+  const [deadlineEventType, setDeadlineEventType] = useState("all");
 
   const loadDeadlines = useCallback(async () => {
     setDeadlinesLoading(true);
     setDeadlinesError(null);
     try {
-      const data = await fetchDeadlines(12);
+      const data = await fetchDeadlines(12, deadlineEventType);
       setDeadlines(Array.isArray(data.deadlines) ? data.deadlines : []);
       setDeadlinesUpdatedAt(data.updatedAt || null);
     } catch (err) {
@@ -63,7 +64,7 @@ function App() {
     } finally {
       setDeadlinesLoading(false);
     }
-  }, []);
+  }, [deadlineEventType]);
 
   useEffect(() => {
     loadDeadlines();
@@ -188,6 +189,8 @@ function App() {
           loading={deadlinesLoading}
           error={deadlinesError}
           updatedAt={deadlinesUpdatedAt}
+          eventType={deadlineEventType}
+          onEventTypeChange={setDeadlineEventType}
           onRefresh={loadDeadlines}
         />
       </aside>

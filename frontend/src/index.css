@@ -891,6 +891,31 @@ input[type="range"]::-moz-range-thumb {
   gap: 8px;
 }
 
+.deadline-filters {
+  display: inline-flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.deadline-filters__button {
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.61rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.deadline-filters__button--active {
+  color: #fff;
+  background: #26231e;
+  border-color: #26231e;
+}
+
 .deadline-card {
   border: 1px solid var(--line);
   border-radius: 10px;

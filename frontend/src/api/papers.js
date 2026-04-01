@@ -45,9 +45,9 @@ export async function checkHealth() {
   return response.data;
 }
 
-export async function fetchDeadlines(limit = 12) {
+export async function fetchDeadlines(limit = 12, eventType = "all") {
   const response = await axios.get("/api/deadlines", {
-    params: { limit },
+    params: { limit, eventType },
   });
   return response.data;
 }

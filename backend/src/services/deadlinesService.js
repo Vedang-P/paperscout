@@ -1,50 +1,93 @@
 const axios = require("axios");
-const YAML = require("yaml");
+const { load } = require("cheerio");
 const { getCache, setCache } = require("../utils/cache");
-const { lower, normalizeWhitespace } = require("../utils/text");
+const { normalizeWhitespace } = require("../utils/text");
 
-const FEED_URLS = [
-  "https://raw.githubusercontent.com/paperswithcode/ai-deadlines/gh-pages/_data/conferences.yml",
-];
-const CACHE_KEY = "deadlines:feed:v1";
+const CACHE_KEY = "deadlines:verified:v2";
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
-const PRIORITY_TITLES = new Set([
-  "CVPR",
-  "ICCV",
-  "ECCV",
-  "WACV",
-  "ICLR",
-  "ICML",
-  "NEURIPS",
-  "AAAI",
-  "IJCAI",
-  "ACL",
-  "EMNLP",
-  "NAACL",
-  "COLING",
-  "KDD",
-  "WWW",
-  "SIGIR",
-  "ICRA",
-  "IROS",
-  "RSS",
-  "CORL",
-]);
+const MONTH_MAP = {
+  jan: 1,
+  january: 1,
+  feb: 2,
+  february: 2,
+  mar: 3,
+  march: 3,
+  apr: 4,
+  april: 4,
+  may: 5,
+  jun: 6,
+  june: 6,
+  jul: 7,
+  july: 7,
+  aug: 8,
+  august: 8,
+  sep: 9,
+  sept: 9,
+  september: 9,
+  oct: 10,
+  october: 10,
+  nov: 11,
+  november: 11,
+  dec: 12,
+  december: 12,
+};
 
-const ESTIMATED_TEMPLATES = [
-  { id: "iclr", title: "ICLR", eventType: "conference", month: 10, day: 1, timezone: "UTC-12", link: "https://iclr.cc", hindex: 280 },
-  { id: "cvpr", title: "CVPR", eventType: "conference", month: 11, day: 15, timezone: "UTC-12", link: "https://cvpr.thecvf.com", hindex: 300 },
-  { id: "iccv", title: "ICCV", eventType: "conference", month: 3, day: 15, timezone: "UTC-12", link: "https://iccv.thecvf.com", hindex: 250 },
-  { id: "eccv", title: "ECCV", eventType: "conference", month: 3, day: 8, timezone: "UTC-12", link: "https://eccv.ecva.net", hindex: 230 },
-  { id: "accv", title: "ACCV", eventType: "conference", month: 7, day: 10, timezone: "UTC-12", link: "https://accv2024.org", hindex: 140 },
-  { id: "acl", title: "ACL", eventType: "conference", month: 2, day: 15, timezone: "UTC-12", link: "https://www.aclweb.org", hindex: 220 },
-  { id: "emnlp", title: "EMNLP", eventType: "conference", month: 6, day: 15, timezone: "UTC-12", link: "https://2025.emnlp.org", hindex: 210 },
-  { id: "naacl", title: "NAACL", eventType: "conference", month: 10, day: 15, timezone: "UTC-12", link: "https://naacl.org", hindex: 180 },
-  { id: "coling", title: "COLING", eventType: "conference", month: 1, day: 20, timezone: "UTC-12", link: "https://coling2025.org", hindex: 160 },
-  { id: "iclr-workshops", title: "ICLR Workshops", eventType: "workshop", month: 11, day: 20, timezone: "UTC-12", link: "https://iclr.cc", hindex: 160 },
-  { id: "cvpr-workshops", title: "CVPR Workshops", eventType: "workshop", month: 12, day: 10, timezone: "UTC-12", link: "https://cvpr.thecvf.com", hindex: 165 },
-  { id: "eccv-workshops", title: "ECCV Workshops", eventType: "workshop", month: 5, day: 20, timezone: "UTC-12", link: "https://eccv.ecva.net", hindex: 150 },
+const VERIFIED_SOURCES = [
+  {
+    id: "iclr-2026-conference-submission",
+    shortTitle: "ICLR 2026",
+    eventType: "conference",
+    deadlineType: "paper submission",
+    timezone: "UTC-12",
+    sourceUrl: "https://iclr.cc/Conferences/2026/CallForPapers",
+    extractor: extractIclrConferenceSubmission,
+  },
+  {
+    id: "cvpr-2026-conference-submission",
+    shortTitle: "CVPR 2026",
+    eventType: "conference",
+    deadlineType: "paper submission",
+    timezone: "UTC-12",
+    sourceUrl: "https://cvpr.thecvf.com/Conferences/2026/CallForPapers",
+    extractor: extractCvfSubmissionAoE,
+  },
+  {
+    id: "eccv-2026-conference-submission",
+    shortTitle: "ECCV 2026",
+    eventType: "conference",
+    deadlineType: "paper submission",
+    timezone: "UTC",
+    sourceUrl: "https://eccv.ecva.net/Conferences/2026/CallForPapers",
+    extractor: extractEccvSubmissionUtcVariable,
+  },
+  {
+    id: "iclr-2026-workshop-proposal",
+    shortTitle: "ICLR 2026 Workshops",
+    eventType: "workshop",
+    deadlineType: "proposal submission",
+    timezone: "UTC-12",
+    sourceUrl: "https://iclr.cc/Conferences/2026/CallForWorkshops",
+    extractor: extractIclrWorkshopProposal,
+  },
+  {
+    id: "cvpr-2026-workshop-proposal",
+    shortTitle: "CVPR 2026 Workshops",
+    eventType: "workshop",
+    deadlineType: "proposal submission",
+    timezone: "UTC-12",
+    sourceUrl: "https://cvpr.thecvf.com/Conferences/2026/CallForWorkshops",
+    extractor: extractCvprWorkshopProposal,
+  },
+  {
+    id: "eccv-2026-workshop-proposal",
+    shortTitle: "ECCV 2026 Workshops",
+    eventType: "workshop",
+    deadlineType: "proposal submission",
+    timezone: "UTC-12",
+    sourceUrl: "https://eccv.ecva.net/Conferences/2026/CallForWorkshops",
+    extractor: extractEccvWorkshopProposal,
+  },
 ];
 
 function parseTimezoneOffset(timezone) {
@@ -52,74 +95,176 @@ function parseTimezoneOffset(timezone) {
   if (!value) return "Z";
   const normalized = value.toLowerCase();
   if (normalized === "aoe") return "-12:00";
+
+  if (normalized === "utc" || normalized === "gmt") return "Z";
+
   const match = value.match(/(?:UTC|GMT)\s*([+-]\d{1,2})/i);
   if (!match) return "Z";
+
   const hours = Number(match[1]);
   if (!Number.isFinite(hours)) return "Z";
+
   const sign = hours >= 0 ? "+" : "-";
   const abs = Math.abs(hours).toString().padStart(2, "0");
   return `${sign}${abs}:00`;
 }
 
 function parseDeadlineDate(deadline, timezone) {
-  if (!deadline) return null;
-  const normalized = normalizeWhitespace(deadline).replace(" ", "T");
-  const offset = parseTimezoneOffset(timezone);
-  const candidate = normalized.match(/[zZ]|[+-]\d{2}:\d{2}$/)
-    ? normalized
-    : `${normalized}${offset === "Z" ? "Z" : offset}`;
-  const timestamp = Date.parse(candidate);
-  if (!Number.isFinite(timestamp)) return null;
-  return new Date(timestamp);
+  const normalized = normalizeWhitespace(deadline);
+  if (!normalized) return null;
+
+  const ymdLike = normalized.replace(/\//g, "-");
+  if (/^\d{4}-\d{2}-\d{2}/.test(ymdLike)) {
+    const isoLike = ymdLike.replace(" ", "T");
+    const offset = parseTimezoneOffset(timezone);
+    const candidate = isoLike.match(/[zZ]|[+-]\d{2}:\d{2}$/)
+      ? isoLike
+      : `${isoLike}${offset === "Z" ? "Z" : offset}`;
+
+    const timestamp = Date.parse(candidate);
+    if (!Number.isFinite(timestamp)) return null;
+    return new Date(timestamp);
+  }
+
+  const directTimestamp = Date.parse(normalized);
+  if (!Number.isFinite(directTimestamp)) return null;
+  return new Date(directTimestamp);
 }
 
-function inferEventType(item) {
-  const explicit = lower(item.eventType || "");
-  if (explicit === "workshop" || explicit === "conference") return explicit;
-  const text = lower(`${item.title || ""} ${item.note || ""}`);
-  if (text.includes("workshop")) return "workshop";
-  return "conference";
+function monthNumberFromName(value) {
+  const key = normalizeWhitespace(value).toLowerCase();
+  return MONTH_MAP[key] || null;
 }
 
-function isFamous(item) {
-  const title = String(item.title || "").toUpperCase();
-  const baseTitle = title.split(" ")[0];
-  const hindex = Number(item.hindex || 0);
-  return PRIORITY_TITLES.has(title) || PRIORITY_TITLES.has(baseTitle) || hindex >= 80;
+function buildDateString({ year, month, day, time = "23:59:59" }) {
+  const y = String(year);
+  const m = String(month).padStart(2, "0");
+  const d = String(day).padStart(2, "0");
+  return `${y}-${m}-${d} ${time}`;
 }
 
-function normalizeEvent(item, now) {
-  const deadlineDate =
-    item.deadlineDate instanceof Date
-      ? item.deadlineDate
-      : parseDeadlineDate(item.deadline, item.timezone);
-  if (!deadlineDate) return null;
+function htmlToText(html) {
+  const $ = load(html || "");
+  return normalizeWhitespace($.text().replace(/\s+/g, " "));
+}
+
+function extractIclrConferenceSubmission({ html, timezone }) {
+  const text = htmlToText(html);
+  const yearMatch = text.match(/ICLR\s+2026/i);
+  if (!yearMatch) return null;
+
+  const submissionMatch = text.match(
+    /Submission date:\s*11:59pm,\s*([A-Za-z]{3,9})\s+(\d{1,2})/i
+  );
+  if (!submissionMatch) return null;
+
+  const month = monthNumberFromName(submissionMatch[1]);
+  const day = Number(submissionMatch[2]);
+  if (!month || !Number.isFinite(day)) return null;
+
+  const conferenceYear = 2026;
+  const submissionYear = month >= 7 ? conferenceYear - 1 : conferenceYear;
+  const deadline = buildDateString({ year: submissionYear, month, day, time: "23:59:59" });
+  return parseDeadlineDate(deadline, timezone);
+}
+
+function extractCvfSubmissionAoE({ html, timezone }) {
+  const text = htmlToText(html);
+  const match = text.match(/Paper Submission Deadline\*?:\s*([A-Za-z]{3,9}\s+\d{1,2},\s*\d{4})\s*AOE/i);
+  if (!match) return null;
+
+  return parseMonthDayYearDate(normalizeWhitespace(match[1]), timezone, "23:59:59");
+}
+
+function extractEccvSubmissionUtcVariable({ html, timezone }) {
+  const match = String(html || "").match(/var\s+submissiondeadline\s*=\s*"([^"]+)"/i);
+  if (!match) return null;
+
+  const raw = normalizeWhitespace(match[1]).replace(/\s+UTC$/i, "");
+  return parseDeadlineDate(raw, timezone);
+}
+
+function extractIclrWorkshopProposal({ html, timezone }) {
+  const text = htmlToText(html);
+  const match = text.match(
+    /Workshop Application Deadline\s*:\s*(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4}),?\s*11\.?59pm\s*AoE/i
+  );
+  if (!match) return null;
+
+  const day = Number(match[1]);
+  const month = monthNumberFromName(match[2]);
+  const year = Number(match[3]);
+  if (!Number.isFinite(day) || !month || !Number.isFinite(year)) return null;
+
+  const deadline = buildDateString({ year, month, day, time: "23:59:59" });
+  return parseDeadlineDate(deadline, timezone);
+}
+
+function extractCvprWorkshopProposal({ html, timezone }) {
+  const text = htmlToText(html);
+  const match = text.match(/Proposal Deadline:\s*([A-Za-z]{3,9}\s+\d{1,2},\s*\d{4})\s*AOE/i);
+  if (!match) return null;
+
+  return parseMonthDayYearDate(normalizeWhitespace(match[1]), timezone, "23:59:59");
+}
+
+function extractEccvWorkshopProposal({ html, timezone }) {
+  const text = htmlToText(html);
+  const match = text.match(
+    /Proposal submission deadline:\s*([A-Za-z]{3,9}\s+\d{1,2},\s*\d{4})\s*AOE/i
+  );
+  if (!match) return null;
+
+  return parseMonthDayYearDate(normalizeWhitespace(match[1]), timezone, "23:59:59");
+}
+
+function parseMonthDayYearDate(value, timezone, time = "23:59:59") {
+  const match = normalizeWhitespace(value).match(/([A-Za-z]{3,9})\s+(\d{1,2}),\s*(\d{4})/);
+  if (!match) return null;
+
+  const month = monthNumberFromName(match[1]);
+  const day = Number(match[2]);
+  const year = Number(match[3]);
+  if (!month || !Number.isFinite(day) || !Number.isFinite(year)) return null;
+
+  const deadline = buildDateString({ year, month, day, time });
+  return parseDeadlineDate(deadline, timezone);
+}
+
+async function fetchHtml(url) {
+  const response = await axios.get(url, {
+    timeout: 15000,
+    headers: {
+      "User-Agent": "sarveshu/1.0 (verified deadlines)",
+    },
+  });
+  return String(response.data || "");
+}
+
+function normalizeVerifiedEvent(source, deadlineDate, now) {
+  if (!(deadlineDate instanceof Date) || Number.isNaN(deadlineDate.getTime())) return null;
+
   const deltaMs = deadlineDate.getTime() - now.getTime();
   const daysRemaining = Math.ceil(deltaMs / (24 * 60 * 60 * 1000));
   const isOpen = daysRemaining >= 0;
-  const eventType = inferEventType(item);
-  const hindex = Number(item.hindex || 0);
-  const title = normalizeWhitespace(`${item.title || ""} ${item.year || ""}`.trim());
 
   return {
-    id: item.id || lower(title).replace(/[^a-z0-9]+/g, "-"),
-    title,
-    shortTitle: normalizeWhitespace(item.title || ""),
-    eventType,
+    id: source.id,
+    title: `${source.shortTitle} ${source.deadlineType}`,
+    shortTitle: source.shortTitle,
+    eventType: source.eventType,
+    deadlineType: source.deadlineType,
     isOpen,
     daysRemaining,
     deadline: deadlineDate.toISOString(),
-    timezone: item.timezone || "UTC",
-    place: normalizeWhitespace(item.place || ""),
-    date: normalizeWhitespace(item.date || ""),
-    link: item.link || "",
-    hindex,
-    isEstimated: Boolean(item.isEstimated),
-    priorityScore:
-      (isOpen ? 100000 : 0) +
-      Math.max(0, 365 - Math.max(0, daysRemaining)) * 10 +
-      hindex +
-      (isFamous(item) ? 200 : 0),
+    timezone: source.timezone,
+    link: source.sourceUrl,
+    sourceUrl: source.sourceUrl,
+    verification: {
+      status: "verified",
+      method: "parsed_from_official_page",
+      verifiedAt: now.toISOString(),
+    },
   };
 }
 
@@ -128,111 +273,64 @@ function sortEvents(a, b) {
   if (a.isOpen && b.isOpen && a.daysRemaining !== b.daysRemaining) {
     return a.daysRemaining - b.daysRemaining;
   }
-  if (a.priorityScore !== b.priorityScore) return b.priorityScore - a.priorityScore;
   return a.title.localeCompare(b.title);
 }
 
-async function loadDeadlinesFeed() {
+async function loadVerifiedDeadlines() {
   const cached = getCache(CACHE_KEY);
   if (cached) return cached;
 
-  let items = [];
-  for (const url of FEED_URLS) {
-    try {
-      const response = await axios.get(url, {
-        timeout: 12000,
-        headers: {
-          "User-Agent": "sarveshu/1.0 (deadlines aggregator)",
-        },
-      });
-      const parsed = YAML.parse(String(response.data || ""));
-      const normalized = Array.isArray(parsed) ? parsed : [];
-      if (normalized.length > 0) {
-        items = normalized;
-        break;
-      }
-    } catch {
-      // Try next source.
-    }
-  }
-
-  setCache(CACHE_KEY, items, CACHE_TTL_MS);
-  return items;
-}
-
-function formatDatePart(value) {
-  return String(value).padStart(2, "0");
-}
-
-function buildEstimatedItems(now) {
-  const currentYear = now.getUTCFullYear();
-  const years = [currentYear, currentYear + 1];
-  const items = [];
-
-  for (const submissionYear of years) {
-    for (const template of ESTIMATED_TEMPLATES) {
-      items.push({
-        id: `${template.id}-${submissionYear + 1}`,
-        title: template.title,
-        year: submissionYear + 1,
-        link: template.link,
-        deadline: `${submissionYear}-${formatDatePart(template.month)}-${formatDatePart(template.day)} 23:59:59`,
-        timezone: template.timezone,
-        place: "",
-        date: "",
-        hindex: template.hindex,
-        note: "Estimated date; verify on official website",
-        isEstimated: true,
-        eventType: template.eventType,
-      });
-    }
-  }
-
-  return items;
-}
-
-function dedupeById(events) {
-  const map = new Map();
-  for (const event of events) {
-    if (!map.has(event.id)) {
-      map.set(event.id, event);
-      continue;
-    }
-    const existing = map.get(event.id);
-    if (existing && existing.isEstimated && !event.isEstimated) {
-      map.set(event.id, event);
-    }
-  }
-  return Array.from(map.values());
-}
-
-async function getActiveDeadlines({ limit = 12, includeClosed = false } = {}) {
   const now = new Date();
-  const feedItems = await loadDeadlinesFeed();
-  const fromFeed = feedItems
-    .map((item) => normalizeEvent(item, now))
-    .filter(Boolean);
+  const events = [];
 
-  const feedOpen = fromFeed.filter((item) => item.isOpen && item.daysRemaining >= -7);
-  const shouldUseEstimatedFallback = feedOpen.length < 4;
+  await Promise.all(
+    VERIFIED_SOURCES.map(async (source) => {
+      try {
+        const html = await fetchHtml(source.sourceUrl);
+        const deadlineDate = source.extractor({ html, timezone: source.timezone });
+        const normalized = normalizeVerifiedEvent(source, deadlineDate, now);
+        if (normalized) events.push(normalized);
+      } catch {
+        // Skip unavailable sources rather than returning unverified values.
+      }
+    })
+  );
 
-  const estimated = shouldUseEstimatedFallback
-    ? buildEstimatedItems(now)
-        .map((item) => normalizeEvent(item, now))
-        .filter(Boolean)
-    : [];
+  setCache(CACHE_KEY, events, CACHE_TTL_MS);
+  return events;
+}
 
-  const normalized = dedupeById([...fromFeed, ...estimated])
-    .filter(Boolean)
+function parseEventTypes(eventType) {
+  const normalized = normalizeWhitespace(eventType).toLowerCase();
+  if (!normalized || normalized === "all") return ["conference", "workshop"];
+
+  const parts = normalized
+    .split(",")
+    .map((item) => normalizeWhitespace(item).toLowerCase())
+    .filter((item) => item === "conference" || item === "workshop");
+
+  return parts.length > 0 ? Array.from(new Set(parts)) : ["conference", "workshop"];
+}
+
+async function getActiveDeadlines({ limit = 12, includeClosed = false, eventType = "all" } = {}) {
+  const now = new Date();
+  const eventTypes = parseEventTypes(eventType);
+  const verified = await loadVerifiedDeadlines();
+
+  const deadlines = verified
+    .filter((item) => eventTypes.includes(item.eventType))
     .filter((item) => includeClosed || item.isOpen)
-    .filter((item) => item.daysRemaining >= -7)
     .sort(sortEvents)
     .slice(0, Math.max(1, Math.min(Number(limit) || 12, 40)));
 
   return {
     updatedAt: now.toISOString(),
-    total: normalized.length,
-    deadlines: normalized,
+    total: deadlines.length,
+    filters: {
+      eventType: eventTypes,
+      includeClosed: Boolean(includeClosed),
+    },
+    deadlines,
   };
 }
 

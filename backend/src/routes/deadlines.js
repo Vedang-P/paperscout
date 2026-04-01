@@ -7,7 +7,8 @@ router.get("/", async (req, res) => {
   try {
     const limit = Number(req.query?.limit || 12);
     const includeClosed = String(req.query?.includeClosed || "").toLowerCase() === "true";
-    const data = await getActiveDeadlines({ limit, includeClosed });
+    const eventType = String(req.query?.eventType || "all");
+    const data = await getActiveDeadlines({ limit, includeClosed, eventType });
     return res.json(data);
   } catch (error) {
     return res.status(502).json({

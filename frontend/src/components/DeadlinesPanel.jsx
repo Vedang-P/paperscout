@@ -3,6 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 const ALERT_STORAGE_KEY = "sarveshu-deadline-alerts";
 const ALERT_LAST_SENT_KEY = "sarveshu-deadline-alerts-last-sent";
 
+const EVENT_TYPE_OPTIONS = [
+  { value: "all", label: "all" },
+  { value: "conference", label: "conference" },
+  { value: "workshop", label: "workshop" },
+];
+
 function formatDays(daysRemaining) {
   if (daysRemaining === 0) return "today";
   if (daysRemaining === 1) return "1 day";
@@ -21,7 +27,15 @@ function formatDate(isoDate) {
   });
 }
 
-export default function DeadlinesPanel({ deadlines, loading, error, updatedAt, onRefresh }) {
+export default function DeadlinesPanel({
+  deadlines,
+  loading,
+  error,
+  updatedAt,
+  eventType = "all",
+  onEventTypeChange,
+  onRefresh,
+}) {
   const [alertsEnabled, setAlertsEnabled] = useState(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem(ALERT_STORAGE_KEY) === "true";
@@ -78,12 +92,29 @@ export default function DeadlinesPanel({ deadlines, loading, error, updatedAt, o
       <header className="panel__header panel__header--inline">
         <div>
           <h2 className="panel__title">active deadlines</h2>
-          <p className="panel__caption">ranked by open status and closest due date</p>
+          <p className="panel__caption">verified official deadlines only</p>
         </div>
         <button type="button" className="panel__button" onClick={onRefresh}>
           refresh
         </button>
       </header>
+
+      <div className="deadline-filters" role="group" aria-label="deadline type filter">
+        {EVENT_TYPE_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={
+              option.value === eventType
+                ? "deadline-filters__button deadline-filters__button--active"
+                : "deadline-filters__button"
+            }
+            onClick={() => onEventTypeChange?.(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
 
       {updatedAt ? (
         <p className="panel__muted panel__muted--tiny">
@@ -120,10 +151,8 @@ export default function DeadlinesPanel({ deadlines, loading, error, updatedAt, o
 
             <p className="deadline-card__meta">
               {deadline.eventType}
-              {deadline.isEstimated ? " · estimated" : ""}
-              {" · "}
-              {formatDays(deadline.daysRemaining)}
-              {" · "}
+              {deadline.deadlineType ? ` · ${deadline.deadlineType}` : ""}
+              {" · "} {formatDays(deadline.daysRemaining)} {" · "}
               due {formatDate(deadline.deadline)}
             </p>
 
