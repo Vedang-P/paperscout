@@ -2,8 +2,6 @@
 
 Sarveshu is a production-oriented paper discovery engine for CV + NLP, focused on workshop/conference/journal discovery from 2021 onward.
 
-This README is logic-first: it explains exactly how requests are processed, ranked, and returned.
-
 ## System Overview
 
 Request flow:
