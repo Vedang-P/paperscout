@@ -131,8 +131,6 @@ Rules:
 - If open set is empty, API returns nearest verified closed deadlines with fallback metadata (`fallback.mode = closed_only`) instead of an empty panel.
 - If fresh deadline fetch fails, the service can reuse stale verified cache rather than returning an empty state.
 
-## Notes Engine (No Auth)
-
 Files:
 
 - `backend/src/services/notesStore.js`
@@ -162,10 +160,6 @@ Behavior:
 - `BODY_LIMIT` (default `256kb`)
 - `CORS_ORIGIN` (optional comma-separated allowlist)
 
-### Optional persistence (recommended for production)
-
-- `KV_REST_API_URL`
-- `KV_REST_API_TOKEN`
 
 ## Local Development
 
@@ -207,8 +201,3 @@ cd frontend && npm run build
 - Candidate caching
 - Removal of dead frontend assets and redundant API utility code paths
 
-## Maintainer
-
-Made by Vedang.
-
-Repo: <https://github.com/Vedang-P/paperscout>
