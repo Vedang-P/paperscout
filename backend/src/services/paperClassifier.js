@@ -1,5 +1,10 @@
 const { SUGGESTED_DATASETS, SUGGESTED_TASKS, SUPPORTED_PAPER_TYPES } = require("../config/searchConfig");
-const { inferWorkshopFlag, lower, normalizeWhitespace, toUniqueList } = require("../utils/text");
+const {
+  inferWorkshopFlag,
+  lower,
+  normalizeTextContent,
+  toUniqueList,
+} = require("../utils/text");
 
 const EXTRA_TASK_PATTERNS = {
   segmentation: ["segmentation", "segment anything"],
@@ -123,8 +128,9 @@ function classifyPaper(paper) {
 
   return {
     ...paper,
-    title: normalizeWhitespace(paper.title),
-    abstract: normalizeWhitespace(paper.abstract),
+    title: normalizeTextContent(paper.title),
+    abstract: normalizeTextContent(paper.abstract),
+    venue: normalizeTextContent(paper.venue),
     links,
     hasCode: Boolean(codeUrl),
     codeUrl,

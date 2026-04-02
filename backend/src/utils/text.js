@@ -4,6 +4,32 @@ function normalizeWhitespace(value) {
     .trim();
 }
 
+function stripMarkup(value) {
+  return String(value || "").replace(/<[^>]*>/g, " ");
+}
+
+function decodeHtmlEntities(value) {
+  return String(value || "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => {
+      const code = Number.parseInt(hex, 16);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : "";
+    })
+    .replace(/&#([0-9]+);/g, (_, dec) => {
+      const code = Number.parseInt(dec, 10);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : "";
+    });
+}
+
+function normalizeTextContent(value) {
+  return normalizeWhitespace(decodeHtmlEntities(stripMarkup(value)));
+}
+
 function lower(value) {
   return normalizeWhitespace(value).toLowerCase();
 }
@@ -301,6 +327,7 @@ function normalizeDoi(doiOrUrl) {
 
 module.exports = {
   normalizeWhitespace,
+  normalizeTextContent,
   lower,
   toArray,
   parseCsvParam,
